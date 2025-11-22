@@ -8,3 +8,12 @@ __pycache__
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# AWS credentials
+.aws/
+*.pem
+*.key
+*.crt
+
+# Lambda build artifacts
+*.zip
