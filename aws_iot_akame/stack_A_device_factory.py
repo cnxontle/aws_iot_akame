@@ -2,6 +2,7 @@ from aws_cdk import (
     Stack,
     aws_lambda as lambda_,
     aws_dynamodb as dynamodb,
+    aws_iam as iam,
     Duration
 )
 from constructs import Construct
@@ -28,4 +29,24 @@ class DeviceFactoryStack(Stack):
             }
         )
 
+        metadata_table.grant_read_write_data(lambda_fn)
+
+        # IAM Role for Lambda to interact with IoT
+        iot_policy = iam.PolicyStatement(
+            actions=[
+                "iot:CreateThing",
+                "iot:CreateKeysAndCertificate",
+                "iot:CreatePolicy",
+                "iot:AttachPolicy",
+                "iot:AttachThingPrincipal",
+                # Opcional: Para poder obtener/verificar si una política ya existe
+                "iot:GetPolicy" 
+            ],
+            resources=["*"] # Para IoT, se suele usar "*" para muchas acciones
+        )
+        
+        # 3. Adjunta la política al rol de la Lambda
+        lambda_fn.add_to_role_policy(iot_policy)
+
+        # Permiso para DynamoDB (ya lo tenías)
         metadata_table.grant_read_write_data(lambda_fn)
