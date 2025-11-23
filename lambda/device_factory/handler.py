@@ -1,23 +1,25 @@
 import json
 import boto3
 import os
+import time
 
 # Inicializar clientes
 iot = boto3.client("iot")
 dynamodb = boto3.resource("dynamodb") 
 
-# Obtener el nombre de la tabla de las variables de entorno de Lambda.
+# Obtener variables de entorno
 TABLE_NAME = os.environ.get("TABLE_NAME")
+
+# Inicializar la tabla
 metadata_table = None
 if TABLE_NAME:
     metadata_table = dynamodb.Table(TABLE_NAME)
-else:
-    print("WARNING: TABLE_NAME environment variable is missing.")
 
 
 def main(event, context):
     try:
-        thing_name = event.get("thingName", None)
+        # Extraer parámetros de la invocación.
+        thing_name = event.get("thingName", None) 
         user_id = event.get("userId", "N/A") 
 
         if thing_name is None:
@@ -26,10 +28,11 @@ def main(event, context):
                 "message": "Debes enviar un thingName"
             }
 
-        # --- 1. Crear el Thing en AWS IoT Core ---
+        # --- 1. Crear el Thing (Gateway) ---
         attributes = {
             "userId": user_id,
-            "factory": "AkameDeviceFactory" 
+            "role": "Gateway", # Identificamos el rol
+            "createdAt": str(int(time.time()))
         }
         iot.create_thing(
             thingName=thing_name,
@@ -45,44 +48,44 @@ def main(event, context):
         private_key = cert["keyPair"]["PrivateKey"]
         public_key = cert["keyPair"]["PublicKey"] 
 
-        # --- 3. Crear política (si no existe) - Seguridad por Usuario ---
-        policy_name = "AkameUserDevicePolicy"
+        # --- 3. Crear política ÚNICA por Usuario (GatewayPolicy) ---
+        policy_name = f"GatewayPolicy_{user_id}" 
         
-        # La política usa ${iot:Thing.Attributes[userId]} para restringir la
-        # publicación y suscripción a tópicos que pertenecen a ese grupo de usuario.
         policy_document = {
             "Version": "2012-10-17",
             "Statement": [
                 {
-                    # Permite al dispositivo conectarse solo si su ClientID es igual al ThingName
+                    # 1. Permite la CONEXIÓN (usando ${iot:ClientId})
                     "Effect": "Allow",
                     "Action": ["iot:Connect"],
                     "Resource": [
-                        f"arn:aws:iot:*:*:client/${{iot:Connection.Thing.ThingName}}"
+                        # CORRECCIÓN AQUÍ: Usamos ${iot:ClientId} 
+                        f"arn:aws:iot:*:*:client/${{iot:ClientId}}" 
                     ]
                 },
                 {
-                    # Permite publicar en CUALQUIER tópico del usuario
+                    # 2. Permite PUBLICAR datos de grupo (telemetría consolidada)
                     "Effect": "Allow",
                     "Action": ["iot:Publish"],
                     "Resource": [
-                        f"arn:aws:iot:*:*:topic/user/${{iot:Thing.Attributes[userId]}}/#"
+                        # CORRECCIÓN AQUÍ: Tópico exacto para Mínimo Privilegio 
+                        f"arn:aws:iot:*:*:topic/gateway/{user_id}/data/telemetry" 
                     ]
                 },
                 {
-                    # Permite suscribirse y recibir de CUALQUIER tópico del usuario
+                    # 3. Permite Suscripción (se mantiene igual, ya que usa comodín de grupo)
                     "Effect": "Allow",
                     "Action": ["iot:Subscribe", "iot:Receive"],
                     "Resource": [
-                        f"arn:aws:iot:*:*:topicfilter/user/${{iot:Thing.Attributes[userId]}}/#",
-                        f"arn:aws:iot:*:*:topic/user/${{iot:Thing.Attributes[userId]}}/#"
+                        f"arn:aws:iot:*:*:topicfilter/gateway/{user_id}/command/#",
+                        f"arn:aws:iot:*:*:topic/gateway/{user_id}/command/#"
                     ]
                 }
             ]
         }
 
         try:
-            # Crea la política solo si no existe
+            # Crea la política solo si el user_id es nuevo (política dinámica por usuario)
             iot.create_policy(
                 policyName=policy_name,
                 policyDocument=json.dumps(policy_document)
@@ -102,7 +105,7 @@ def main(event, context):
             principal=cert_arn
         )
         
-        # --- 6. Guardar metadatos en DynamoDB (Persistencia) ---
+        # --- 6. Guardar metadatos en DynamoDB ---
         if metadata_table:
             metadata_table.put_item(
                 Item={
@@ -110,23 +113,24 @@ def main(event, context):
                     "certificateArn": cert_arn,
                     "certificateId": cert_id,
                     "userId": user_id,
-                    # Se puede añadir 'public_key' aquí si se necesita una copia de seguridad
+                    "role": "Gateway",
+                    "createdAt": str(int(time.time()))
                 }
             )
         
-        # --- 7. Retornar las credenciales al script que invoca ---
+        # --- 7. Retornar las credenciales al Gateway ---
         return {
             "status": "ok",
             "thingName": thing_name,
             "certificateArn": cert_arn,
             "certificatePem": cert_pem,
             "privateKey": private_key,
-            "publicKey": public_key
+            "publicKey": public_key,
+            "gatewayTopic": f"gateway/{user_id}/data/telemetry" # Tópico que el Gateway debe usar
         }
 
     except Exception as e:
-        # Registrar el error en CloudWatch
-        print(f"Error en la creación del dispositivo: {str(e)}")
+        print(f"Error en la creación del Gateway: {str(e)}")
         return {
             "status": "error",
             "message": str(e)
