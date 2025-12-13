@@ -16,6 +16,7 @@ class DeviceFactoryStack(Stack):
             self, "DeviceMetadata",
             partition_key={"name": "thingName", "type": dynamodb.AttributeType.STRING}
         )
+        
 
         # Lambda Device Factory
         lambda_fn = lambda_.Function(
@@ -48,5 +49,7 @@ class DeviceFactoryStack(Stack):
         # 3. Adjunta la política al rol de la Lambda
         lambda_fn.add_to_role_policy(iot_policy)
 
-        # Permiso para DynamoDB (ya lo tenías)
+        # Permiso para DynamoDB 
         metadata_table.grant_read_write_data(lambda_fn)
+
+        self.metadata_table = metadata_table

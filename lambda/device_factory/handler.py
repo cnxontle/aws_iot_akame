@@ -114,7 +114,9 @@ def main(event, context):
                     "certificateId": cert_id,
                     "userId": user_id,
                     "role": "Gateway",
-                    "createdAt": str(int(time.time()))
+                    "createdAt": str(int(time.time())),
+                    "lastRenewalDate": int(time.time()),  # <-- inicializamos ahora
+                    "status": "active"
                 }
             )
         
@@ -127,6 +129,7 @@ def main(event, context):
             "privateKey": private_key,
             "publicKey": public_key,
             "gatewayTopic": f"gateway/{user_id}/data/telemetry" # Tópico que el Gateway debe usar
+
         }
 
     except Exception as e:
