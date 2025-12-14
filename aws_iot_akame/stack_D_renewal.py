@@ -38,7 +38,7 @@ class RenewalStack(Stack):
         for scope_path in ["thing", "user"]:
             scope_res = api.root.add_resource(scope_path)
 
-            for action in ["renew", "revoke", "rehabilitate"]:
+            for action in ["renew", "revoke", "rehabilitate", "status"]:
                 action_res = scope_res.add_resource(action)
                 action_res.add_method(
                     "POST",

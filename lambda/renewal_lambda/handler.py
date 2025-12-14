@@ -23,6 +23,13 @@ def lambda_handler(event, context):
     try:
         scope, action = _parse_path(event)
         body = _parse_body(event)
+
+        if action == "status":
+            if scope != "user":
+                return _bad("Status only supported for user scope")
+            return _status_user(body)
+
+
         now = int(time.time())
 
         # Resolver targets
@@ -135,7 +142,37 @@ def _resolve_targets(scope, body):
 
     raise ValueError("Invalid scope")
 
+# ---------- Status action ----------
+def _status_user(body):
+    user_id = body.get("userId")
+    if not user_id:
+        raise ValueError("Missing userId")
 
+    resp = table.query(
+        IndexName="ByUser",
+        KeyConditionExpression=Key("userId").eq(user_id),
+    )
+
+    devices = []
+    for item in resp.get("Items", []):
+        devices.append({
+            "thingName": item["thingName"],
+            "status": item.get("status"),
+            "createdAt": item.get("createdAt"),
+            "lastRenewalDate": item.get("lastRenewalDate"),
+            "revokedAt": item.get("revokedAt"),
+            "rehabilitatedAt": item.get("rehabilitatedAt"),
+        })
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "ok": True,
+            "userId": user_id,
+            "count": len(devices),
+            "devices": devices,
+        }),
+    }
 # ---------- Helpers ----------
 
 def _parse_path(event):
@@ -150,7 +187,7 @@ def _parse_path(event):
     if scope not in ("thing", "user"):
         raise ValueError("Invalid scope")
 
-    if action not in ("renew", "revoke", "rehabilitate"):
+    if action not in ("renew", "revoke", "rehabilitate", "status"):
         raise ValueError("Invalid action")
 
     return scope, action
