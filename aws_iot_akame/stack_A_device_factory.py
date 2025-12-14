@@ -3,7 +3,8 @@ from aws_cdk import (
     aws_lambda as lambda_,
     aws_dynamodb as dynamodb,
     aws_iam as iam,
-    Duration
+    Duration,
+    RemovalPolicy
 )
 from constructs import Construct
 
@@ -14,9 +15,17 @@ class DeviceFactoryStack(Stack):
         # DynamoDB Metadata
         metadata_table = dynamodb.Table(
             self, "DeviceMetadata",
-            partition_key={"name": "thingName", "type": dynamodb.AttributeType.STRING}
+            partition_key={"name": "thingName", "type": dynamodb.AttributeType.STRING},
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN
         )
-        
+
+        metadata_table.add_global_secondary_index(
+            index_name="ByUser",
+            partition_key={"name": "userId", "type": dynamodb.AttributeType.STRING},
+            projection_type=dynamodb.ProjectionType.ALL
+        )
+
 
         # Lambda Device Factory
         lambda_fn = lambda_.Function(
@@ -29,8 +38,6 @@ class DeviceFactoryStack(Stack):
                 "TABLE_NAME": metadata_table.table_name
             }
         )
-
-        metadata_table.grant_read_write_data(lambda_fn)
 
         # IAM Role for Lambda to interact with IoT
         iot_policy = iam.PolicyStatement(
