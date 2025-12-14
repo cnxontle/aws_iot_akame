@@ -4,6 +4,7 @@ import time
 import boto3
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
+from decimal import Decimal
 
 
 # ---------- Init ----------
@@ -16,6 +17,11 @@ if not TABLE_NAME:
 
 table = dynamodb.Table(TABLE_NAME)
 
+
+def _json_safe(value):
+    if isinstance(value, Decimal):
+        return int(value)
+    return value
 
 # ---------- Entry point ----------
 
@@ -158,10 +164,10 @@ def _status_user(body):
         devices.append({
             "thingName": item["thingName"],
             "status": item.get("status"),
-            "createdAt": item.get("createdAt"),
-            "lastRenewalDate": item.get("lastRenewalDate"),
-            "revokedAt": item.get("revokedAt"),
-            "rehabilitatedAt": item.get("rehabilitatedAt"),
+            "createdAt": _json_safe(item.get("createdAt")),
+            "lastRenewalDate": _json_safe(item.get("lastRenewalDate")),
+            "revokedAt": _json_safe(item.get("revokedAt")),
+            "rehabilitatedAt": _json_safe(item.get("rehabilitatedAt")),
         })
 
     return {

@@ -3,6 +3,7 @@ from aws_cdk import (
     Duration,
     aws_lambda as lambda_,
     aws_apigateway as apigw,
+    CfnOutput,
 )
 from constructs import Construct
 
@@ -45,5 +46,12 @@ class RenewalStack(Stack):
                     apigw.LambdaIntegration(device_admin_fn),
                     authorization_type=apigw.AuthorizationType.IAM,
                 )
+        
+        CfnOutput(
+            self,
+            "DeviceAdminApiUrl",
+            value=api.url,
+            description="Base URL for Device Admin API",
+        )
 
         self.api_url = api.url
