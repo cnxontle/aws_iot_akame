@@ -1,7 +1,6 @@
-# aws_iot_akame/stack_D_renewal.py
 from aws_cdk import (
-    Duration,
     Stack,
+    Duration,
     aws_lambda as lambda_,
     aws_apigateway as apigw,
 )
@@ -9,35 +8,42 @@ from constructs import Construct
 
 
 class RenewalStack(Stack):
-    def __init__(self, scope: Construct, id: str, metadata_table, **kwargs):
-        super().__init__(scope, id, **kwargs)
+    def __init__(self, scope: Construct, construct_id: str, metadata_table, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
 
         device_admin_fn = lambda_.Function(
-            self, "DeviceAdminLambda",
+            self,
+            "DeviceAdminLambda",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset("lambda/renewal_lambda"),
-            timeout=Duration.seconds(5),
-            memory_size=128,
+            timeout=Duration.seconds(10),
+            memory_size=256,
             environment={
                 "DEVICE_METADATA_TABLE": metadata_table.table_name,
-            }
+            },
         )
 
+        # Permisos DynamoDB
         metadata_table.grant_read_write_data(device_admin_fn)
 
+        # API Gateway
         api = apigw.RestApi(
-            self, "DeviceAdminAPI",
-            rest_api_name="DeviceAdminAPI"
+            self,
+            "DeviceAdminAPI",
+            rest_api_name="DeviceAdminAPI",
         )
 
-        for path in ["renew", "revoke", "rehabilitate"]:
-            res = api.root.add_resource(path)
-            res.add_method(
-                "POST",
-                apigw.LambdaIntegration(device_admin_fn),
-                authorization_type=apigw.AuthorizationType.IAM
-            )
+        # Rutas: /thing/* y /user/*
+        for scope_path in ["thing", "user"]:
+            scope_res = api.root.add_resource(scope_path)
+
+            for action in ["renew", "revoke", "rehabilitate"]:
+                action_res = scope_res.add_resource(action)
+                action_res.add_method(
+                    "POST",
+                    apigw.LambdaIntegration(device_admin_fn),
+                    authorization_type=apigw.AuthorizationType.IAM,
+                )
 
         self.api_url = api.url
-

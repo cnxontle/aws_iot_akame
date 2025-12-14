@@ -117,7 +117,9 @@ def main(event, context):
                     "createdAt": str(int(time.time())),
                     "lastRenewalDate": int(time.time()),  # <-- inicializamos ahora
                     "status": "active"
-                }
+                },
+                ConditionExpression="attribute_not_exists(thingName)" # Evita sobrescribir
+
             )
         
         # --- 7. Retornar las credenciales al Gateway ---
