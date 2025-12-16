@@ -4,14 +4,25 @@ from aws_cdk import (
     aws_lambda as lambda_,
     aws_apigateway as apigw,
     CfnOutput,
+    CfnParameter
 )
 from constructs import Construct
 
+DEFAULT_RENEWAL_DAYS = "30"
 
 class RenewalStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, metadata_table, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
 
+        renewal_days_param = CfnParameter(
+            self, 
+            "RenewalDays",
+            type="String",
+            default=DEFAULT_RENEWAL_DAYS,
+            description="Duración de la renovación del dispositivo en días."
+        )
+
+        
         device_admin_fn = lambda_.Function(
             self,
             "DeviceAdminLambda",
@@ -22,6 +33,8 @@ class RenewalStack(Stack):
             memory_size=256,
             environment={
                 "DEVICE_METADATA_TABLE": metadata_table.table_name,
+                # Pasamos el valor del parámetro (en días) a la Lambda
+                "RENEWAL_PERIOD_DAYS": renewal_days_param.value_as_string, 
             },
         )
 

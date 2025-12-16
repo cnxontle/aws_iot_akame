@@ -6,15 +6,18 @@ import boto3
 dynamodb = boto3.resource("dynamodb")
 
 TABLE_NAME = os.environ.get("DEVICE_METADATA_TABLE")
+
 if not TABLE_NAME:
     raise RuntimeError("DEVICE_METADATA_TABLE environment variable is not set")
 table = dynamodb.Table(TABLE_NAME)
 
-EXPIRATION_SECONDS = int(os.environ.get("EXPIRATION_SECONDS", 30 * 24 * 3600))
+
 
 def lambda_handler(event, context):
+    thing_name = None
+    
     try:
-        thing_name = None
+        now = int(time.time())
 
         if isinstance(event, dict):
             thing_name = event.get("thingName") or event.get("token") or event.get("principalId")
@@ -26,22 +29,25 @@ def lambda_handler(event, context):
             or len(thing_name) > 64
             or not thing_name.replace("_", "").replace("-", "").isalnum()
         ):
-            return _deny("invalid_thing_name")
+            return _deny("invalid_thing_name", thing_name)
 
-        resp = table.get_item(Key={"thingName": thing_name})
+        resp = table.get_item(
+            Key={"thingName": thing_name}
+        )
         item = resp.get("Item")
+
         if not item:
             return _deny("not_registered")
-
+        
         status = item.get("status", "inactive")
-        last = int(item.get("lastRenewalDate", 0))
-        now = int(time.time())
+        expires_at = int(item.get("expiresAt", 0))
 
-        if status != "active" or (now - last) > EXPIRATION_SECONDS:
-            return _deny("expired_or_inactive")
+        is_expired = now > expires_at
+
+        if status != "active" or is_expired:
+            return _deny(f"inactive_or_expired: {status} (Expires: {expires_at})", thing_name)
 
         user_id = item.get("userId", "unknown")
-
 
         # Misma política del Device Factory
         policy_doc = {
@@ -85,17 +91,19 @@ def lambda_handler(event, context):
         "thing": thing_name,
         "source": "iot_authorizer"
         }))
-        return _deny("error")
+        return _deny("error", thing_name)
 
-def _deny(reason):
+def _deny(reason, principal_id="anonymous"):
+    if principal_id is None:
+        principal_id = "anonymous"
     return {
         "isAuthenticated": False,
-        "principalId": "anonymous",
+        "principalId": principal_id,
         "policyDocument": {
             "Version": "2012-10-17",
             "Statement": [
                 {
-                    "Action": ["iot:Connect", "iot:Publish", "iot:Subscribe", "iot:Receive"],
+                    "Action": ["iot:Connect"],
                     "Effect": "Deny",
                     "Resource": ["*"]
                 }

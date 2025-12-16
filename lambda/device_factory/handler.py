@@ -2,78 +2,103 @@ import json
 import boto3
 import os
 import time
+from uuid import uuid4
 
-# Inicializar clientes
 iot = boto3.client("iot")
-dynamodb = boto3.resource("dynamodb") 
+dynamodb = boto3.resource("dynamodb")
 
-# Obtener variables de entorno
-TABLE_NAME = os.environ.get("TABLE_NAME")
+TABLE_NAME = os.environ["TABLE_NAME"]
+DEFAULT_EXPIRATION_SECONDS = int(
+    os.environ.get("DEFAULT_EXPIRATION_SECONDS", 30 * 24 * 3600)
+)
 
-# Inicializar la tabla
-metadata_table = None
-if TABLE_NAME:
-    metadata_table = dynamodb.Table(TABLE_NAME)
+table = dynamodb.Table(TABLE_NAME)
 
 
 def main(event, context):
     try:
-        # Extraer parámetros de la invocación.
-        thing_name = event.get("thingName", None) 
-        user_id = event.get("userId", "N/A") 
+        now = int(time.time())
 
-        if thing_name is None:
-            return {
-                "status": "error",
-                "message": "Debes enviar un thingName"
-            }
+        # Inputs obligatorios
+        user_id = event.get("userId")
+        display_name = event.get("displayName", "Gateway")
 
-        # --- 1. Crear el Thing (Gateway) ---
-        attributes = {
-            "userId": user_id,
-            "role": "Gateway", # Identificamos el rol
-            "createdAt": str(int(time.time()))
-        }
-        iot.create_thing(
-            thingName=thing_name,
-            attributePayload={"attributes": attributes}
+        if not isinstance(user_id, str) or not user_id or len(user_id) > 64:
+            return _error("invalid userId")
+
+        # Expiración
+        plan_days = event.get("planDays")
+
+        if plan_days is not None:
+            plan_days = int(plan_days)
+            if plan_days <= 0 or plan_days > 3650:
+                return _error("planDays must be between 1 and 3650")
+            expires_at = now + plan_days * 86400
+        else:
+            expires_at = now + DEFAULT_EXPIRATION_SECONDS
+
+        # thingName único
+        thing_name = f"gw_{uuid4().hex}"
+
+        # Guardar metadata
+        table.put_item(
+            Item={
+                "thingName": thing_name,
+                "userId": user_id,
+                "displayName": display_name,
+                "role": "Gateway",
+
+                "status": "provisioning",
+
+                "createdAt": now,
+                "lastRenewalDate": now,
+                "expiresAt": expires_at,
+            },
+            ConditionExpression="attribute_not_exists(thingName)"
         )
 
-        # --- 2. Crear llave privada + certificado ---
+
+        # Crear Thing
+        iot.create_thing(
+            thingName=thing_name,
+            thingTypeName="Gateway",
+            attributePayload={
+                "attributes": {
+                    "userId": user_id,
+                    "role": "Gateway",
+                    "displayName": display_name,
+                    "createdAt": str(now),
+                }
+            }
+        )
+
+        # Certificado
         cert = iot.create_keys_and_certificate(setAsActive=True)
-
-        cert_id = cert["certificateId"]
         cert_arn = cert["certificateArn"]
-        cert_pem = cert["certificatePem"]
-        private_key = cert["keyPair"]["PrivateKey"]
-        public_key = cert["keyPair"]["PublicKey"] 
+        cert_id = cert["certificateId"]
 
-        # --- 3. Crear política ÚNICA por Usuario (GatewayPolicy) ---
-        policy_name = f"GatewayPolicy_{user_id}" 
-        
-        policy_document = {
+
+        # Policy por usuario
+        policy_name = f"GatewayPolicy_{user_id}"
+
+        policy_doc = {
             "Version": "2012-10-17",
             "Statement": [
                 {
-                    # 1. Permite la CONEXIÓN (usando ${iot:ClientId})
                     "Effect": "Allow",
                     "Action": ["iot:Connect"],
                     "Resource": [
-                        # CORRECCIÓN AQUÍ: Usamos ${iot:ClientId} 
-                        f"arn:aws:iot:*:*:client/${{iot:ClientId}}" 
+                        "arn:aws:iot:*:*:client/${iot:ClientId}"
                     ]
                 },
                 {
-                    # 2. Permite PUBLICAR datos de grupo (telemetría consolidada)
                     "Effect": "Allow",
                     "Action": ["iot:Publish"],
                     "Resource": [
-                        # CORRECCIÓN AQUÍ: Tópico exacto para Mínimo Privilegio 
-                        f"arn:aws:iot:*:*:topic/gateway/{user_id}/data/telemetry" 
+                        f"arn:aws:iot:*:*:topic/gateway/{user_id}/data/telemetry"
                     ]
                 },
                 {
-                    # 3. Permite Suscripción (se mantiene igual, ya que usa comodín de grupo)
                     "Effect": "Allow",
                     "Action": ["iot:Subscribe", "iot:Receive"],
                     "Resource": [
@@ -85,58 +110,52 @@ def main(event, context):
         }
 
         try:
-            # Crea la política solo si el user_id es nuevo (política dinámica por usuario)
             iot.create_policy(
                 policyName=policy_name,
-                policyDocument=json.dumps(policy_document)
+                policyDocument=json.dumps(policy_doc)
             )
         except iot.exceptions.ResourceAlreadyExistsException:
-            pass 
+            pass
 
-        # --- 4. Adjuntar política al certificado ---
-        iot.attach_policy(
-            policyName=policy_name,
-            target=cert_arn
-        )
-
-        # --- 5. Conectar certificado con Thing ---
+        iot.attach_policy(policyName=policy_name, target=cert_arn)
         iot.attach_thing_principal(
             thingName=thing_name,
             principal=cert_arn
         )
-        
-        # --- 6. Guardar metadatos en DynamoDB ---
-        if metadata_table:
-            metadata_table.put_item(
-                Item={
-                    "thingName": thing_name,          # Clave de partición
-                    "certificateArn": cert_arn,
-                    "certificateId": cert_id,
-                    "userId": user_id,
-                    "role": "Gateway",
-                    "createdAt": str(int(time.time())),
-                    "lastRenewalDate": int(time.time()),  # <-- inicializamos ahora
-                    "status": "active"
-                },
-                ConditionExpression="attribute_not_exists(thingName)" # Evita sobrescribir
 
-            )
-        
-        # --- 7. Retornar las credenciales al Gateway ---
+        # Activar dispositivo
+        table.update_item(
+            Key={"thingName": thing_name},
+            UpdateExpression="""
+                SET #s = :active,
+                    certificateArn = :carn,
+                    certificateId = :cid
+            """,
+            ExpressionAttributeNames={
+                "#s": "status",
+            },
+            ExpressionAttributeValues={
+                ":active": "active",
+                ":carn": cert_arn,
+                ":cid": cert_id,
+            }
+        )
+
+        # Response
         return {
             "status": "ok",
             "thingName": thing_name,
-            "certificateArn": cert_arn,
-            "certificatePem": cert_pem,
-            "privateKey": private_key,
-            "publicKey": public_key,
-            "gatewayTopic": f"gateway/{user_id}/data/telemetry" # Tópico que el Gateway debe usar
-
+            "displayName": display_name,
+            "certificatePem": cert["certificatePem"],
+            "privateKey": cert["keyPair"]["PrivateKey"],
+            "publicKey": cert["keyPair"]["PublicKey"],
+            "gatewayTopic": f"gateway/{user_id}/data/telemetry"
         }
 
     except Exception as e:
-        print(f"Error en la creación del Gateway: {str(e)}")
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        print("DeviceFactory error:", str(e))
+        return _error(str(e))
+
+
+def _error(msg):
+    return {"status": "error", "message": msg}

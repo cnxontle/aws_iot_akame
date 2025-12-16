@@ -11,6 +11,7 @@ class AuthorizerStack(Stack):
     def __init__(self, scope: Construct, id: str, metadata_table, **kwargs):
         super().__init__(scope, id, **kwargs)
 
+
         auth_fn = lambda_.Function(
             self, "AuthLambda",
             runtime=lambda_.Runtime.PYTHON_3_12,
@@ -21,7 +22,6 @@ class AuthorizerStack(Stack):
             
             environment={
                 "DEVICE_METADATA_TABLE": metadata_table.table_name,
-                "EXPIRATION_SECONDS": str(30 * 24 * 3600)
             }
         )
 
@@ -34,6 +34,6 @@ class AuthorizerStack(Stack):
             authorizer_function_arn=auth_fn.function_arn,
             signing_disabled=True,
             status="ACTIVE",
+                    
         )
-
         self.authorizer_name = authorizer.authorizer_name
