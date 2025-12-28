@@ -12,7 +12,9 @@ class ActivationCodeStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
 
-        # Tabla de códigos de activación
+        # =========================
+        # DynamoDB: Activation Codes
+        # =========================
         activation_code_table = dynamodb.Table(
             self,
             "ActivationCodeTable",
@@ -25,7 +27,9 @@ class ActivationCodeStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # Lambda administrativa (uso interno)
+        # =========================
+        # Admin Lambda (crear códigos)
+        # =========================
         admin_lambda = lambda_.Function(
             self,
             "ActivationCodeAdminLambda",
@@ -36,12 +40,33 @@ class ActivationCodeStack(Stack):
             memory_size=128,
             environment={
                 "ACTIVATION_CODE_TABLE": activation_code_table.table_name,
-                "DEFAULT_CODE_TTL_SECONDS": str(7 * 24 * 3600),  # 7 días
+                "DEFAULT_CODE_TTL_SECONDS": str(7 * 24 * 3600),
             },
         )
 
-        # Permisos mínimos necesarios
         activation_code_table.grant_read_write_data(admin_lambda)
 
+        # =========================
+        # Consume Lambda (usar código)
+        # =========================
+        consume_lambda = lambda_.Function(
+            self,
+            "ConsumeActivationCodeLambda",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="consume_handler.main",
+            code=lambda_.Code.from_asset("lambda/activation_code"),
+            timeout=Duration.seconds(5),
+            memory_size=128,
+            environment={
+                "ACTIVATION_CODE_TABLE": activation_code_table.table_name,
+            },
+        )
+
+        activation_code_table.grant_read_write_data(consume_lambda)
+
+        # =========================
+        # Exports internos
+        # =========================
         self.activation_code_table = activation_code_table
         self.admin_lambda = admin_lambda
+        self.consume_lambda = consume_lambda
