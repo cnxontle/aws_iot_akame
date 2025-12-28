@@ -6,7 +6,6 @@ import boto3
 
 TABLE_NAME = os.environ["ACTIVATION_CODE_TABLE"]
 DEFAULT_TTL = int(os.environ.get("DEFAULT_CODE_TTL_SECONDS", 604800))
-"usedAt": None
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 
@@ -40,6 +39,7 @@ def main(event, context):
                     "status": "active",
                     "createdAt": now,
                     "expiresAt": expires_at,
+                    "usedAt": None
                 },
                 ConditionExpression="attribute_not_exists(code)",
             )
