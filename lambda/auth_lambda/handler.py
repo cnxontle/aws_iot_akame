@@ -12,7 +12,6 @@ if not TABLE_NAME:
 table = dynamodb.Table(TABLE_NAME)
 
 
-
 def lambda_handler(event, context):
     thing_name = None
     
@@ -49,7 +48,7 @@ def lambda_handler(event, context):
 
         user_id = item.get("userId", "unknown")
 
-        # Misma política del Device Factory
+        # Crear política de autorización
         policy_doc = {
             "Version": "2012-10-17",
             "Statement": [
