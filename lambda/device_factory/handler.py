@@ -3,6 +3,7 @@ import boto3
 import os
 import time
 from uuid import uuid4
+from boto3.dynamodb.conditions import Key
 
 iot = boto3.client("iot")
 dynamodb = boto3.resource("dynamodb")
@@ -25,6 +26,17 @@ def main(event, context):
 
         if not isinstance(user_id, str) or not user_id or len(user_id) > 64:
             return _error("invalid userId")
+
+        # ¿Existe ya el usuario?
+        try:
+            resp = table.query(
+                IndexName="ByUser",
+                KeyConditionExpression=Key("userId").eq(user_id),
+                Limit=1
+            )
+            is_new_user = resp["Count"] == 0
+        except Exception:
+            is_new_user = True
 
         # Expiración
         plan_days = event.get("planDays")
@@ -77,47 +89,7 @@ def main(event, context):
         cert_arn = cert["certificateArn"]
         cert_id = cert["certificateId"]
 
-
-        # Policy por usuario
-        policy_name = f"GatewayPolicy_{user_id}"
-
-        policy_doc = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": ["iot:Connect"],
-                    "Resource": [
-                        "arn:aws:iot:*:*:client/${iot:ClientId}"
-                    ]
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": ["iot:Publish"],
-                    "Resource": [
-                        f"arn:aws:iot:*:*:topic/gateway/{user_id}/data/telemetry"
-                    ]
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": ["iot:Subscribe", "iot:Receive"],
-                    "Resource": [
-                        f"arn:aws:iot:*:*:topicfilter/gateway/{user_id}/command/#",
-                        f"arn:aws:iot:*:*:topic/gateway/{user_id}/command/#"
-                    ]
-                }
-            ]
-        }
-
-        try:
-            iot.create_policy(
-                policyName=policy_name,
-                policyDocument=json.dumps(policy_doc)
-            )
-        except iot.exceptions.ResourceAlreadyExistsException:
-            pass
-
-        iot.attach_policy(policyName=policy_name, target=cert_arn)
+        # Asociar certificado al Thing
         iot.attach_thing_principal(
             thingName=thing_name,
             principal=cert_arn
@@ -149,7 +121,8 @@ def main(event, context):
             "certificatePem": cert["certificatePem"],
             "privateKey": cert["keyPair"]["PrivateKey"],
             "publicKey": cert["keyPair"]["PublicKey"],
-            "gatewayTopic": f"gateway/{user_id}/data/telemetry"
+            "gatewayTopic": f"gateway/{user_id}/data/telemetry",
+            "isNewUser": is_new_user
         }
 
     except Exception as e:
