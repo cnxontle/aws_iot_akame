@@ -64,9 +64,6 @@ class DeviceFactoryStack(Stack):
                 actions=[
                     "iot:CreateThing",
                     "iot:CreateKeysAndCertificate",
-                    "iot:CreatePolicy",
-                    "iot:GetPolicy",
-                    "iot:AttachPolicy",
                     "iot:AttachThingPrincipal",
                 ],
                 resources=["*"],
