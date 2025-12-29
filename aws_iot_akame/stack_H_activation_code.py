@@ -9,10 +9,11 @@ from constructs import Construct
 
 
 class ActivationCodeStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs):
+    def __init__(self, scope: Construct, construct_id: str, metadata_table, **kwargs):
+
         super().__init__(scope, construct_id, **kwargs)
 
-        # =========================
+         # =========================
         # DynamoDB: Activation Codes
         # =========================
         activation_code_table = dynamodb.Table(
@@ -23,12 +24,11 @@ class ActivationCodeStack(Stack):
                 "type": dynamodb.AttributeType.STRING,
             },
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            time_to_live_attribute="expiresAt",
             removal_policy=RemovalPolicy.RETAIN,
         )
 
         # =========================
-        # Admin Lambda (crear códigos)
+        # Admin Lambda
         # =========================
         admin_lambda = lambda_.Function(
             self,
@@ -47,7 +47,7 @@ class ActivationCodeStack(Stack):
         activation_code_table.grant_read_write_data(admin_lambda)
 
         # =========================
-        # Consume Lambda (usar código)
+        # Consume Lambda
         # =========================
         consume_lambda = lambda_.Function(
             self,
@@ -59,6 +59,7 @@ class ActivationCodeStack(Stack):
             memory_size=128,
             environment={
                 "ACTIVATION_CODE_TABLE": activation_code_table.table_name,
+                "DEVICE_METADATA_TABLE": metadata_table.table_name,  # OK
             },
         )
 

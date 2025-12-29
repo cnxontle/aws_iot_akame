@@ -10,45 +10,43 @@ from constructs import Construct
 
 DEFAULT_RENEWAL_DAYS = "30"
 
+
 class RenewalStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, metadata_table, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
 
         renewal_days_param = CfnParameter(
-            self, 
+            self,
             "RenewalDays",
             type="String",
             default=DEFAULT_RENEWAL_DAYS,
-            description="Duración de la renovación del dispositivo en días."
+            description="Duración de la renovación del dispositivo en días"
         )
 
-        
-        device_admin_fn = lambda_.Function(
+        renewal_fn = lambda_.Function(
             self,
-            "DeviceAdminLambda",
+            "RenewalLambda",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset("lambda/renewal_lambda"),
-            timeout=Duration.seconds(10),
+            timeout=Duration.seconds(15),
             memory_size=256,
             environment={
                 "DEVICE_METADATA_TABLE": metadata_table.table_name,
-                # Pasamos el valor del parámetro (en días) a la Lambda
-                "RENEWAL_PERIOD_DAYS": renewal_days_param.value_as_string, 
+                "RENEWAL_PERIOD_DAYS": renewal_days_param.value_as_string,
             },
         )
 
-        # Permisos DynamoDB
-        metadata_table.grant_read_write_data(device_admin_fn)
+        # DynamoDB permissions
+        metadata_table.grant_read_write_data(renewal_fn)
 
         # API Gateway
         api = apigw.RestApi(
             self,
-            "DeviceAdminAPI",
-            rest_api_name="DeviceAdminAPI",
+            "RenewalAPI",
+            rest_api_name="RenewalAPI",
         )
 
-        # Rutas: /thing/* y /user/*
         for scope_path in ["thing", "user"]:
             scope_res = api.root.add_resource(scope_path)
 
@@ -56,15 +54,16 @@ class RenewalStack(Stack):
                 action_res = scope_res.add_resource(action)
                 action_res.add_method(
                     "POST",
-                    apigw.LambdaIntegration(device_admin_fn),
+                    apigw.LambdaIntegration(renewal_fn),
                     authorization_type=apigw.AuthorizationType.IAM,
                 )
-        
+
         CfnOutput(
             self,
-            "DeviceAdminApiUrl",
+            "RenewalApiUrl",
             value=api.url,
-            description="Base URL for Device Admin API",
+            description="Base URL for Renewal API",
         )
 
         self.api_url = api.url
+

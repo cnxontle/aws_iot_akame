@@ -109,4 +109,3 @@ def _deny(reason, principal_id="anonymous"):
         },
         "context": {"reason": reason}
     }
-cd

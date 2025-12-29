@@ -29,20 +29,24 @@ class DeviceFactoryStack(Stack):
                 "Statement": [
                     {
                         "Effect": "Allow",
-                        "Action": ["iot:Connect"],
-                        "Resource": ["*"]
+                        "Action": "iot:Connect",
+                        "Resource": "arn:aws:iot:*:*:client/${iot:Connection.Thing.ThingName}"
                     },
                     {
                         "Effect": "Allow",
                         "Action": [
                             "iot:Publish",
-                            "iot:Subscribe",
                             "iot:Receive"
                         ],
                         "Resource": [
-                            "arn:aws:iot:*:*:topic/gateway/*/data/telemetry",
-                            "arn:aws:iot:*:*:topic/gateway/*/command/*",
-                            "arn:aws:iot:*:*:topicfilter/gateway/*/command/*"
+                            "arn:aws:iot:*:*:topic/gateway/${iot:Connection.Thing.Attributes[userId]}/data/telemetry"
+                        ]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": "iot:Subscribe",
+                        "Resource": [
+                            "arn:aws:iot:*:*:topicfilter/gateway/${iot:Connection.Thing.Attributes[userId]}/command/*"
                         ]
                     }
                 ]
@@ -68,6 +72,35 @@ class DeviceFactoryStack(Stack):
                 "type": dynamodb.AttributeType.STRING,
             },
             projection_type=dynamodb.ProjectionType.ALL,
+        )
+
+        metadata_table.add_global_secondary_index(
+            index_name="ByActivationCode",
+            partition_key={
+                "name": "activationCode",
+                "type": dynamodb.AttributeType.STRING,
+            },
+            projection_type=dynamodb.ProjectionType.ALL,
+        )
+
+
+        metadata_table.add_global_secondary_index(
+            index_name="ByStatusExpiry",
+            partition_key=dynamodb.Attribute(
+                name="lifecycleStatus",
+                type=dynamodb.AttributeType.STRING,
+            ),
+            sort_key=dynamodb.Attribute(
+                name="expiresAt",
+                type=dynamodb.AttributeType.NUMBER,
+            ),
+            projection_type=dynamodb.ProjectionType.INCLUDE,
+            non_key_attributes=[
+                "thingName",
+                "certificateId",
+                "certificateArn",
+                "status"
+            ],
         )
 
 
@@ -96,7 +129,11 @@ class DeviceFactoryStack(Stack):
                     "iot:AttachThingPrincipal",
                     "iot:AttachPolicy",
                 ],
-                resources=["*"],
+                resources=[
+                    f"arn:aws:iot:{self.region}:{self.account}:thing/*",
+                    f"arn:aws:iot:{self.region}:{self.account}:cert/*",
+                    f"arn:aws:iot:{self.region}:{self.account}:policy/GatewayBasePolicy",
+                ],
             )
         )
 

@@ -5,28 +5,28 @@ import string
 import boto3
 
 TABLE_NAME = os.environ["ACTIVATION_CODE_TABLE"]
-DEFAULT_TTL = int(os.environ.get("DEFAULT_CODE_TTL_SECONDS", 604800))
+DEFAULT_TTL = int(os.environ.get("DEFAULT_CODE_TTL_SECONDS", 604800))  # 7 días
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
 
 
+# Genera un código único
 def _generate_code(length=10):
     alphabet = string.ascii_uppercase + string.digits
     return "ACT-" + "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+# Lambda handler
 def main(event, context):
-    user_id = event.get("userId")
-    ttl_seconds = event.get("ttlSeconds", DEFAULT_TTL)
+    user_id = event.get("userId")  # ID del usuario Cognito que el admin quiere asignar
+
 
     if not user_id or not isinstance(user_id, str):
         return _error("invalid userId")
 
-    if ttl_seconds <= 0 or ttl_seconds > 30 * 24 * 3600:
-        return _error("invalid ttlSeconds")
 
     now = int(time.time())
-    expires_at = now + ttl_seconds
+
 
     # Generar código único (retry simple)
     for _ in range(3):
@@ -36,12 +36,11 @@ def main(event, context):
                 Item={
                     "code": code,
                     "userId": user_id,
-                    "status": "active",
+                    "status": "active",  # activo hasta usar
                     "createdAt": now,
-                    "expiresAt": expires_at,
                     "usedAt": None
                 },
-                ConditionExpression="attribute_not_exists(code)",
+                ConditionExpression="attribute_not_exists(code)",  # evita colisiones
             )
             break
         except Exception:
@@ -50,13 +49,12 @@ def main(event, context):
     if not code:
         return _error("could not generate unique code")
 
+    # Retorna código generado para que el admin se lo entregue al usuario
     return {
         "status": "ok",
         "activationCode": code,
         "userId": user_id,
-        "expiresAt": expires_at,
     }
-
 
 def _error(msg):
     return {"status": "error", "message": msg}

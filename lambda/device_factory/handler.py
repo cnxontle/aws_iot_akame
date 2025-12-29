@@ -51,24 +51,7 @@ def main(event, context):
 
         # thingName único
         thing_name = f"gw_{uuid4().hex}"
-
-        # Guardar metadata
-        table.put_item(
-            Item={
-                "thingName": thing_name,
-                "userId": user_id,
-                "displayName": display_name,
-                "role": "Gateway",
-
-                "status": "provisioning",
-
-                "createdAt": now,
-                "lastRenewalDate": now,
-                "expiresAt": expires_at,
-            },
-            ConditionExpression="attribute_not_exists(thingName)"
-        )
-
+        activation_code = str(uuid4().hex)
 
         # Crear Thing
         iot.create_thing(
@@ -76,7 +59,6 @@ def main(event, context):
             thingTypeName="Gateway",
             attributePayload={
                 "attributes": {
-                    "userId": user_id,
                     "role": "Gateway",
                     "displayName": display_name,
                     "createdAt": str(now),
@@ -90,10 +72,14 @@ def main(event, context):
         cert_id = cert["certificateId"]
 
         # Adjuntar policy IoT al certificado
-        iot.attach_policy(
-            policyName="GatewayBasePolicy",
-            target=cert_arn
-        )
+        try:
+            iot.attach_policy(
+                policyName="GatewayBasePolicy",
+                target=cert_arn
+            )
+        except Exception:
+            iot.update_certificate(certificateId=cert_id, newStatus="INACTIVE")
+            raise
 
         iot.attach_thing_principal(
         thingName=thing_name,
@@ -101,22 +87,29 @@ def main(event, context):
         )
 
         # Activar dispositivo
-        table.update_item(
-            Key={"thingName": thing_name},
-            UpdateExpression="""
-                SET #s = :active,
-                    certificateArn = :carn,
-                    certificateId = :cid
-            """,
-            ExpressionAttributeNames={
-                "#s": "status",
-            },
-            ExpressionAttributeValues={
-                ":active": "active",
-                ":carn": cert_arn,
-                ":cid": cert_id,
-            }
-        )
+        try:
+            table.put_item(
+                Item={
+                    "thingName": thing_name,
+                    "userId": None,
+                    "displayName": display_name,
+                    "role": "Gateway",
+
+                    "status": "active",
+                    "lifecycleStatus": "ACTIVE",  # ACTIVE | EXPIRED | REVOKED
+
+                    "certificateArn": cert_arn,
+                    "certificateId": cert_id,
+
+                    "createdAt": now,
+                    "lastRenewalDate": now,
+                    "expiresAt": expires_at,
+                },
+                ConditionExpression="attribute_not_exists(thingName)"
+            )
+        except Exception:
+            iot.update_certificate(certificateId=cert_id, newStatus="INACTIVE")
+            raise
 
         # Response
         return {

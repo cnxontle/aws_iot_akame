@@ -4,16 +4,17 @@ import os
 
 from aws_iot_akame.stack_A_device_factory import DeviceFactoryStack
 from aws_iot_akame.stack_B_authorizer import AuthorizerStack
+from aws_iot_akame.stack_C_certificate_lifecycle import CertificateLifecycleStack
 from aws_iot_akame.stack_D_renewal import RenewalStack
 from aws_iot_akame.stack_G_cognito import CognitoStack
 from aws_iot_akame.stack_H_activation_code import ActivationCodeStack
-from aws_iot_akame.stack_I_ingestion import TelemetryIngestionStack
+
 
 app = cdk.App()
 
 env = cdk.Environment(
     account=os.getenv("AWS_ACCOUNT_ID"),
-    region=os.getenv("us-east-2")
+    region=os.getenv("AWS_REGION", "us-east-2")
 )
 
 # Módulo A
@@ -27,6 +28,14 @@ factory= DeviceFactoryStack(
 authorizer = AuthorizerStack(
     app,
     "AuthorizerStack",
+    metadata_table=factory.metadata_table,   # PASA LA TABLA
+    env=env
+)
+
+# Módulo C
+certificate_lifecycle = CertificateLifecycleStack(
+    app,
+    "CertificateLifecycleStack",
     metadata_table=factory.metadata_table,   # PASA LA TABLA
     env=env
 )
@@ -52,16 +61,9 @@ cognito = CognitoStack(
 activation_code = ActivationCodeStack(
     app,
     "ActivationCodeStack",
-
-
-    env=env
-)
-
-# Módulo I
-ingestion = TelemetryIngestionStack(
-    app,
-    "TelemetryIngestionStack",
     metadata_table=factory.metadata_table,   # PASA LA TABLA
+
+
     env=env
 )
 
