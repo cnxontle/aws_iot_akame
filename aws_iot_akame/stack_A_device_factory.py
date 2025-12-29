@@ -20,6 +20,35 @@ class DeviceFactoryStack(Stack):
             thing_type_name="Gateway"
         )
 
+        gateway_policy = iot.CfnPolicy(
+            self,
+            "GatewayPolicy",
+            policy_name="GatewayBasePolicy",
+            policy_document={
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": ["iot:Connect"],
+                        "Resource": ["*"]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "iot:Publish",
+                            "iot:Subscribe",
+                            "iot:Receive"
+                        ],
+                        "Resource": [
+                            "arn:aws:iot:*:*:topic/gateway/*/data/telemetry",
+                            "arn:aws:iot:*:*:topic/gateway/*/command/*",
+                            "arn:aws:iot:*:*:topicfilter/gateway/*/command/*"
+                        ]
+                    }
+                ]
+            }
+        )
+
         # DynamoDB Metadata Table
         metadata_table = dynamodb.Table(
             self,
@@ -65,6 +94,7 @@ class DeviceFactoryStack(Stack):
                     "iot:CreateThing",
                     "iot:CreateKeysAndCertificate",
                     "iot:AttachThingPrincipal",
+                    "iot:AttachPolicy",
                 ],
                 resources=["*"],
             )
@@ -72,5 +102,5 @@ class DeviceFactoryStack(Stack):
 
         # --- DynamoDB permissions ---
         metadata_table.grant_read_write_data(lambda_fn)
-
+        self.gateway_policy = gateway_policy
         self.metadata_table = metadata_table

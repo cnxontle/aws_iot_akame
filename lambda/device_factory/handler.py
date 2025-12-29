@@ -89,10 +89,15 @@ def main(event, context):
         cert_arn = cert["certificateArn"]
         cert_id = cert["certificateId"]
 
-        # Asociar certificado al Thing
+        # Adjuntar policy IoT al certificado
+        iot.attach_policy(
+            policyName="GatewayBasePolicy",
+            target=cert_arn
+        )
+
         iot.attach_thing_principal(
-            thingName=thing_name,
-            principal=cert_arn
+        thingName=thing_name,
+        principal=cert_arn
         )
 
         # Activar dispositivo
