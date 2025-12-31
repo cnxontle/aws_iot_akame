@@ -14,8 +14,9 @@ activation_table = dynamodb.Table(ACTIVATION_CODE_TABLE)
 device_table = dynamodb.Table(DEVICE_METADATA_TABLE)
 
 
-def _bucket(now: int) -> str:
-    return f"ACTIVE#{datetime.fromtimestamp(now, tz=timezone.utc):%Y%m%d%H}"
+def _bucket_for_expiry(expires_at: int) -> str:
+    return f"ACTIVE#{datetime.fromtimestamp(expires_at, tz=timezone.utc):%Y%m%d%H}"
+
 
 
 def main(event, context):
@@ -76,7 +77,7 @@ def main(event, context):
                     ":active": "ACTIVE",
                     ":trial": "TRIAL",
                     ":expired": "EXPIRED",
-                    ":bucket": _bucket(now),
+                    ":bucket": _bucket_for_expiry(new_expires_at),
                 },
             )
 

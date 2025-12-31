@@ -113,11 +113,26 @@ class DeviceFactoryStack(Stack):
         # --- IAM IoT permissions ---
         lambda_fn.add_to_role_policy(
             iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "iot:CreateKeysAndCertificate",
+                ],
+                resources=["*"],
+            )
+        )
+        lambda_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
                 actions=[
                     "iot:CreateThing",
-                    "iot:CreateKeysAndCertificate",
+                    "iot:DeleteThing",
                     "iot:AttachThingPrincipal",
+                    "iot:DetachThingPrincipal",
                     "iot:AttachPolicy",
+                    "iot:DetachPolicy",
+                    "iot:UpdateCertificate",
+                    "iot:DeleteCertificate",
+                    "iot:DescribeCertificate",
                 ],
                 resources=[
                     f"arn:aws:iot:{self.region}:{self.account}:thing/*",
@@ -126,6 +141,8 @@ class DeviceFactoryStack(Stack):
                 ],
             )
         )
+
+
 
         # --- DynamoDB permissions ---
         metadata_table.grant_read_write_data(lambda_fn)

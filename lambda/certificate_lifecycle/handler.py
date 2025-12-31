@@ -1,7 +1,7 @@
 import os
 import time
 import boto3
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 dynamodb = boto3.resource("dynamodb")
@@ -10,8 +10,12 @@ iot = boto3.client("iot")
 DEVICE_METADATA_TABLE = os.environ["DEVICE_METADATA_TABLE"]
 device_table = dynamodb.Table(DEVICE_METADATA_TABLE)
 
-BUCKET_PREFIX_TRIAL = "TRIAL#"
+BUCKET_PREFIXES = ["TRIAL#", "ACTIVE#"]
 BUCKET_PREFIX_EXPIRED = "EXPIRED#"
+
+
+def _bucket_for_now(prefix: str, now: int) -> str:
+    return f"{prefix}{datetime.fromtimestamp(now, tz=timezone.utc):%Y%m%d%H}"
 
 
 def _expired_bucket(now: int) -> str:
@@ -20,56 +24,50 @@ def _expired_bucket(now: int) -> str:
 
 def main(event, context):
     now = int(time.time())
-
-    # Generar lista de buckets TRIAL# de las últimas 72 horas (más que suficiente para trials de 3 días)
-    current_time = datetime.fromtimestamp(now, tz=timezone.utc)
-    buckets_to_check = []
-    for hour_offset in range(72):
-        bucket_time = current_time - timedelta(hours=hour_offset)
-        bucket = f"{BUCKET_PREFIX_TRIAL}{bucket_time:%Y%m%d%H}"
-        buckets_to_check.append(bucket)
-
     expired_devices = []
 
-    # Query cada bucket posible buscando dispositivos expirados
-    for bucket in buckets_to_check:
-        last_evaluated_key = None
-        while True:
-            query_kwargs = {
-                "IndexName": "ByLifecycleBucket",
-                "KeyConditionExpression": "lifecycleBucket = :bucket AND expiresAt <= :now",
-                "ExpressionAttributeValues": {
-                    ":bucket": bucket,
-                    ":now": now
-                },
-                "ProjectionExpression": "thingName, certificateId, lifecycleStatus"
-            }
-            if last_evaluated_key:
-                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
+    # --- Consultar buckets exactos de esta hora ---
+    LOOKBACK_HOURS = 12
+   
+    for prefix in BUCKET_PREFIXES:
+        for offset in range(LOOKBACK_HOURS):
+            ts = now - offset * 3600
+            bucket = _bucket_for_now(prefix, ts)
+            last_evaluated_key = None
 
-            try:
-                response = device_table.query(**query_kwargs)
-                items = response.get("Items", [])
-                expired_devices.extend(items)
+            while True:
+                try:
+                    response = device_table.query(
+                        IndexName="ByLifecycleBucket",
+                        KeyConditionExpression="lifecycleBucket = :bucket AND expiresAt <= :now",
+                        ExpressionAttributeValues={
+                            ":bucket": bucket,
+                            ":now": now,
+                        },
+                        ProjectionExpression="thingName, certificateId, lifecycleStatus",
+                        ExclusiveStartKey=last_evaluated_key if last_evaluated_key else None,
+                    )
 
-                last_evaluated_key = response.get("LastEvaluatedKey")
-                if not last_evaluated_key:
+                    expired_devices.extend(response.get("Items", []))
+                    last_evaluated_key = response.get("LastEvaluatedKey")
+
+                    if not last_evaluated_key:
+                        break
+
+                except ClientError as e:
+                    print(f"Error querying bucket {bucket}: {e}")
                     break
-            except ClientError as e:
-                print(f"Error querying bucket {bucket}: {e}")
-                break
 
-    # Procesar dispositivos expirados
+    # --- Procesar expiraciones ---
     processed = 0
     for device in expired_devices:
-        if device.get("lifecycleStatus") != "TRIAL":
+        if device.get("lifecycleStatus") not in ("TRIAL", "ACTIVE"):
             continue
 
         thing_name = device["thingName"]
         cert_id = device["certificateId"]
 
         try:
-            # Marcar como expirado en DynamoDB
             device_table.update_item(
                 Key={"thingName": thing_name},
                 UpdateExpression="""
@@ -77,20 +75,26 @@ def main(event, context):
                         lifecycleBucket = :expired_bucket,
                         expiredAt = :now
                 """,
-                ConditionExpression="lifecycleStatus = :trial",
+                ConditionExpression="lifecycleStatus = :trial OR lifecycleStatus = :active",
                 ExpressionAttributeValues={
                     ":expired": "EXPIRED",
                     ":expired_bucket": _expired_bucket(now),
                     ":now": now,
-                    ":trial": "TRIAL"
-                }
+                    ":trial": "TRIAL",
+                    ":active": "ACTIVE",
+                },
             )
 
-            # Inactivar certificado si está activo
             try:
-                cert_desc = iot.describe_certificate(certificateId=cert_id)["certificateDescription"]
+                cert_desc = iot.describe_certificate(
+                    certificateId=cert_id
+                )["certificateDescription"]
+
                 if cert_desc["status"] == "ACTIVE":
-                    iot.update_certificate(certificateId=cert_id, newStatus="INACTIVE")
+                    iot.update_certificate(
+                        certificateId=cert_id,
+                        newStatus="INACTIVE"
+                    )
             except ClientError as cert_error:
                 print(f"Could not update certificate {cert_id}: {cert_error}")
 

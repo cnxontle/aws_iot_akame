@@ -3,25 +3,36 @@ import time
 import boto3
 from uuid import uuid4
 from datetime import datetime, timezone
+from botocore.exceptions import ClientError
 
 iot = boto3.client("iot")
 dynamodb = boto3.resource("dynamodb")
 
 METADATA_TABLE = os.environ["METADATA_TABLE"]
 ACTIVATION_TABLE = os.environ["ACTIVATION_CODE_TABLE"]
-DEFAULT_EXPIRATION_SECONDS = int(os.environ.get("DEFAULT_EXPIRATION_SECONDS", 3 * 24 * 3600))
+DEFAULT_EXPIRATION_SECONDS = int(
+    os.environ.get("DEFAULT_EXPIRATION_SECONDS", 3 * 24 * 3600)
+)
 
 metadata_table = dynamodb.Table(METADATA_TABLE)
 activation_table = dynamodb.Table(ACTIVATION_TABLE)
-BUCKET_PREFIX = "TRIAL#"
 
-def _bucket(now: int) -> str:
-    return f"{BUCKET_PREFIX}{datetime.fromtimestamp(now, tz=timezone.utc):%Y%m%d%H}"
+BUCKET_PREFIXES = {
+    "TRIAL": "TRIAL#",
+    "ACTIVE": "ACTIVE#",
+}
+
+
+def _bucket_for_expiry(expires_at: int, lifecycle_status: str) -> str:
+    prefix = BUCKET_PREFIXES[lifecycle_status]
+    return f"{prefix}{datetime.fromtimestamp(expires_at, tz=timezone.utc):%Y%m%d%H}"
+
 
 def _generate_activation_code() -> str:
     import secrets, string
     alphabet = string.ascii_uppercase + string.digits
     return "ACT-" + "".join(secrets.choice(alphabet) for _ in range(10))
+
 
 def main(event, context):
     try:
@@ -29,9 +40,8 @@ def main(event, context):
         expires_at = now + DEFAULT_EXPIRATION_SECONDS
 
         thing_name = f"gw_{uuid4().hex}"
-      
 
-        # Crear Thing
+        # --- Crear Thing ---
         iot.create_thing(
             thingName=thing_name,
             thingTypeName="Gateway",
@@ -45,16 +55,22 @@ def main(event, context):
             },
         )
 
-        # Crear certificado
+        # --- Crear certificado ---
         cert = iot.create_keys_and_certificate(setAsActive=True)
         cert_arn = cert["certificateArn"]
         cert_id = cert["certificateId"]
 
         try:
-            iot.attach_policy(policyName="GatewayBasePolicy", target=cert_arn)
-            iot.attach_thing_principal(thingName=thing_name, principal=cert_arn)
-        except Exception as attach_exc:
-            # Cleanup robusto
+            iot.attach_policy(
+                policyName="GatewayBasePolicy",
+                target=cert_arn
+            )
+            iot.attach_thing_principal(
+                thingName=thing_name,
+                principal=cert_arn
+            )
+        except Exception:
+            # Cleanup defensivo
             try: iot.detach_policy(policyName="GatewayBasePolicy", target=cert_arn)
             except: pass
             try: iot.detach_thing_principal(thingName=thing_name, principal=cert_arn)
@@ -65,42 +81,42 @@ def main(event, context):
             except: pass
             try: iot.delete_thing(thingName=thing_name)
             except: pass
-            raise attach_exc
+            raise
 
-
-
-        # Guardar código de activación
+        # --- Código de activación ---
+        activation_code = None
         for _ in range(3):
-            activation_code = _generate_activation_code()
+            code = _generate_activation_code()
             try:
                 activation_table.put_item(
                     Item={
-                        "code": activation_code,
+                        "code": code,
                         "thingName": thing_name,
                         "createdAt": now,
                         "planSeconds": DEFAULT_EXPIRATION_SECONDS,
                     },
                     ConditionExpression="attribute_not_exists(code)",
                 )
+                activation_code = code
                 break
-            except Exception as e:
-                if "ConditionalCheckFailedException" in str(e):
-                    activation_code = None
-                else:
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
                     raise
 
         if not activation_code:
             raise Exception("Could not generate unique activation code")
-        
-        # Guardar en metadata
+
+        lifecycle_status = "TRIAL"
+
+        # --- Metadata ---
         metadata_table.put_item(
             Item={
                 "thingName": thing_name,
                 "userId": "unassigned",
                 "displayName": "unassigned",
                 "role": "Gateway",
-                "lifecycleStatus": "TRIAL",
-                "lifecycleBucket": _bucket(now),
+                "lifecycleStatus": lifecycle_status,
+                "lifecycleBucket": _bucket_for_expiry(expires_at, lifecycle_status),
                 "certificateArn": cert_arn,
                 "certificateId": cert_id,
                 "createdAt": now,
