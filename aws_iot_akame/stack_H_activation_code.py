@@ -1,38 +1,18 @@
 from aws_cdk import (
     Stack,
     Duration,
-    RemovalPolicy,
-    aws_dynamodb as dynamodb,
     aws_lambda as lambda_,
+    aws_iam as iam,
 )
 from constructs import Construct
 
-
 class ActivationCodeStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, metadata_table, **kwargs):
-
+    def __init__(self, scope: Construct, construct_id: str, metadata_table, activation_code_table, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
 
-         # =========================
-        # DynamoDB: Activation Codes
-        # =========================
-        activation_code_table = dynamodb.Table(
+        consume_lambda = lambda_.Function(
             self,
-            "ActivationCodeTable",
-            partition_key={
-                "name": "code",
-                "type": dynamodb.AttributeType.STRING,
-            },
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.RETAIN,
-        )
-
-        # =========================
-        # Admin Lambda
-        # =========================
-        admin_lambda = lambda_.Function(
-            self,
-            "ActivationCodeAdminLambda",
+            "ConsumeActivationCodeLambda",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.main",
             code=lambda_.Code.from_asset("lambda/activation_code"),
@@ -40,34 +20,21 @@ class ActivationCodeStack(Stack):
             memory_size=128,
             environment={
                 "ACTIVATION_CODE_TABLE": activation_code_table.table_name,
-                "DEFAULT_CODE_TTL_SECONDS": str(7 * 24 * 3600),
-            },
-        )
-
-        activation_code_table.grant_read_write_data(admin_lambda)
-
-        # =========================
-        # Consume Lambda
-        # =========================
-        consume_lambda = lambda_.Function(
-            self,
-            "ConsumeActivationCodeLambda",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="consume_handler.main",
-            code=lambda_.Code.from_asset("lambda/activation_code"),
-            timeout=Duration.seconds(5),
-            memory_size=128,
-            environment={
-                "ACTIVATION_CODE_TABLE": activation_code_table.table_name,
-                "DEVICE_METADATA_TABLE": metadata_table.table_name,  # OK
+                "DEVICE_METADATA_TABLE": metadata_table.table_name,
             },
         )
 
         activation_code_table.grant_read_write_data(consume_lambda)
+        metadata_table.grant_read_write_data(consume_lambda)
 
-        # =========================
-        # Exports internos
-        # =========================
-        self.activation_code_table = activation_code_table
-        self.admin_lambda = admin_lambda
+        consume_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["iot:UpdateThing", "iot:DescribeThing", "iot:DescribeCertificate", "iot:UpdateCertificate"],
+                resources=[
+                    f"arn:aws:iot:{self.region}:{self.account}:thing/*",
+                    f"arn:aws:iot:{self.region}:{self.account}:cert/*"
+                ]
+            )
+        )
+
         self.consume_lambda = consume_lambda

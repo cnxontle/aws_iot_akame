@@ -52,9 +52,7 @@ renewal = RenewalStack(
 cognito = CognitoStack(
     app,
     "CognitoStack",
-
     env=env
-
 )
 
 # Módulo H
@@ -62,8 +60,7 @@ activation_code = ActivationCodeStack(
     app,
     "ActivationCodeStack",
     metadata_table=factory.metadata_table,   # PASA LA TABLA
-
-
+    activation_code_table=factory.activation_code_table,  # PASA LA TABLA
     env=env
 )
 

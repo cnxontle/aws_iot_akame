@@ -1,57 +1,35 @@
-import json
-import boto3
 import os
 import time
+import boto3
 from uuid import uuid4
-from boto3.dynamodb.conditions import Key
+from datetime import datetime, timezone
 
 iot = boto3.client("iot")
 dynamodb = boto3.resource("dynamodb")
 
-TABLE_NAME = os.environ["TABLE_NAME"]
-DEFAULT_EXPIRATION_SECONDS = int(
-    os.environ.get("DEFAULT_EXPIRATION_SECONDS", 30 * 24 * 3600)
-)
+METADATA_TABLE = os.environ["METADATA_TABLE"]
+ACTIVATION_TABLE = os.environ["ACTIVATION_CODE_TABLE"]
+DEFAULT_EXPIRATION_SECONDS = int(os.environ.get("DEFAULT_EXPIRATION_SECONDS", 3 * 24 * 3600))
 
-table = dynamodb.Table(TABLE_NAME)
+metadata_table = dynamodb.Table(METADATA_TABLE)
+activation_table = dynamodb.Table(ACTIVATION_TABLE)
+BUCKET_PREFIX = "TRIAL#"
 
+def _bucket(now: int) -> str:
+    return f"{BUCKET_PREFIX}{datetime.fromtimestamp(now, tz=timezone.utc):%Y%m%d%H}"
+
+def _generate_activation_code() -> str:
+    import secrets, string
+    alphabet = string.ascii_uppercase + string.digits
+    return "ACT-" + "".join(secrets.choice(alphabet) for _ in range(10))
 
 def main(event, context):
     try:
         now = int(time.time())
+        expires_at = now + DEFAULT_EXPIRATION_SECONDS
 
-        # Inputs obligatorios
-        user_id = event.get("userId")
-        display_name = event.get("displayName", "Gateway")
-
-        if not isinstance(user_id, str) or not user_id or len(user_id) > 64:
-            return _error("invalid userId")
-
-        # ¿Existe ya el usuario?
-        try:
-            resp = table.query(
-                IndexName="ByUser",
-                KeyConditionExpression=Key("userId").eq(user_id),
-                Limit=1
-            )
-            is_new_user = resp["Count"] == 0
-        except Exception:
-            is_new_user = True
-
-        # Expiración
-        plan_days = event.get("planDays")
-
-        if plan_days is not None:
-            plan_days = int(plan_days)
-            if plan_days <= 0 or plan_days > 3650:
-                return _error("planDays must be between 1 and 3650")
-            expires_at = now + plan_days * 86400
-        else:
-            expires_at = now + DEFAULT_EXPIRATION_SECONDS
-
-        # thingName único
         thing_name = f"gw_{uuid4().hex}"
-        activation_code = str(uuid4().hex)
+      
 
         # Crear Thing
         iot.create_thing(
@@ -60,73 +38,90 @@ def main(event, context):
             attributePayload={
                 "attributes": {
                     "role": "Gateway",
-                    "displayName": display_name,
+                    "displayName": "unassigned",
+                    "userId": "unassigned",
                     "createdAt": str(now),
                 }
-            }
+            },
         )
 
-        # Certificado
+        # Crear certificado
         cert = iot.create_keys_and_certificate(setAsActive=True)
         cert_arn = cert["certificateArn"]
         cert_id = cert["certificateId"]
 
-        # Adjuntar policy IoT al certificado
         try:
-            iot.attach_policy(
-                policyName="GatewayBasePolicy",
-                target=cert_arn
-            )
-        except Exception:
-            iot.update_certificate(certificateId=cert_id, newStatus="INACTIVE")
-            raise
+            iot.attach_policy(policyName="GatewayBasePolicy", target=cert_arn)
+            iot.attach_thing_principal(thingName=thing_name, principal=cert_arn)
+        except Exception as attach_exc:
+            # Cleanup robusto
+            try: iot.detach_policy(policyName="GatewayBasePolicy", target=cert_arn)
+            except: pass
+            try: iot.detach_thing_principal(thingName=thing_name, principal=cert_arn)
+            except: pass
+            try: iot.update_certificate(certificateId=cert_id, newStatus="REVOKED")
+            except: pass
+            try: iot.delete_certificate(certificateId=cert_id)
+            except: pass
+            try: iot.delete_thing(thingName=thing_name)
+            except: pass
+            raise attach_exc
 
-        iot.attach_thing_principal(
-        thingName=thing_name,
-        principal=cert_arn
+
+
+        # Guardar código de activación
+        for _ in range(3):
+            activation_code = _generate_activation_code()
+            try:
+                activation_table.put_item(
+                    Item={
+                        "code": activation_code,
+                        "thingName": thing_name,
+                        "createdAt": now,
+                        "planSeconds": DEFAULT_EXPIRATION_SECONDS,
+                    },
+                    ConditionExpression="attribute_not_exists(code)",
+                )
+                break
+            except Exception as e:
+                if "ConditionalCheckFailedException" in str(e):
+                    activation_code = None
+                else:
+                    raise
+
+        if not activation_code:
+            raise Exception("Could not generate unique activation code")
+        
+        # Guardar en metadata
+        metadata_table.put_item(
+            Item={
+                "thingName": thing_name,
+                "userId": "unassigned",
+                "displayName": "unassigned",
+                "role": "Gateway",
+                "lifecycleStatus": "TRIAL",
+                "lifecycleBucket": _bucket(now),
+                "certificateArn": cert_arn,
+                "certificateId": cert_id,
+                "createdAt": now,
+                "activatedAt": None,
+                "lastRenewalDate": None,
+                "expiredAt": None,
+                "expiresAt": expires_at,
+            },
+            ConditionExpression="attribute_not_exists(thingName)",
         )
 
-        # Activar dispositivo
-        try:
-            table.put_item(
-                Item={
-                    "thingName": thing_name,
-                    "userId": None,
-                    "displayName": display_name,
-                    "role": "Gateway",
-
-                    "status": "active",
-                    "lifecycleStatus": "ACTIVE",  # ACTIVE | EXPIRED | REVOKED
-
-                    "certificateArn": cert_arn,
-                    "certificateId": cert_id,
-
-                    "createdAt": now,
-                    "lastRenewalDate": now,
-                    "expiresAt": expires_at,
-                },
-                ConditionExpression="attribute_not_exists(thingName)"
-            )
-        except Exception:
-            iot.update_certificate(certificateId=cert_id, newStatus="INACTIVE")
-            raise
-
-        # Response
         return {
             "status": "ok",
             "thingName": thing_name,
-            "displayName": display_name,
+            "activationCode": activation_code,
             "certificatePem": cert["certificatePem"],
             "privateKey": cert["keyPair"]["PrivateKey"],
             "publicKey": cert["keyPair"]["PublicKey"],
-            "gatewayTopic": f"gateway/{user_id}/data/telemetry",
-            "isNewUser": is_new_user
+            "gatewayTopic": "gateway/unassigned/data/telemetry",
         }
 
     except Exception as e:
         print("DeviceFactory error:", str(e))
-        return _error(str(e))
-
-
-def _error(msg):
-    return {"status": "error", "message": msg}
+        return {"status": "error", "message": str(e)}

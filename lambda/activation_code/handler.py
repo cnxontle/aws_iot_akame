@@ -1,60 +1,139 @@
 import os
 import time
-import secrets
-import string
 import boto3
+from botocore.exceptions import ClientError
+from datetime import datetime, timezone
 
-TABLE_NAME = os.environ["ACTIVATION_CODE_TABLE"]
-DEFAULT_TTL = int(os.environ.get("DEFAULT_CODE_TTL_SECONDS", 604800))  # 7 días
 dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table(TABLE_NAME)
+iot = boto3.client("iot")
+
+ACTIVATION_CODE_TABLE = os.environ["ACTIVATION_CODE_TABLE"]
+DEVICE_METADATA_TABLE = os.environ["DEVICE_METADATA_TABLE"]
+
+activation_table = dynamodb.Table(ACTIVATION_CODE_TABLE)
+device_table = dynamodb.Table(DEVICE_METADATA_TABLE)
 
 
-# Genera un código único
-def _generate_code(length=10):
-    alphabet = string.ascii_uppercase + string.digits
-    return "ACT-" + "".join(secrets.choice(alphabet) for _ in range(length))
+def _bucket(now: int) -> str:
+    return f"ACTIVE#{datetime.fromtimestamp(now, tz=timezone.utc):%Y%m%d%H}"
 
 
-# Lambda handler
 def main(event, context):
-    user_id = event.get("userId")  # ID del usuario Cognito que el admin quiere asignar
+    try:
+        activation_code = event.get("activationCode")
+        cognito_sub = event.get("cognitoSub")
 
+        if not activation_code or not cognito_sub:
+            return {"status": "error", "message": "invalid input"}
 
-    if not user_id or not isinstance(user_id, str):
-        return _error("invalid userId")
+        now = int(time.time())
 
+        # Obtener activation code
+        code_resp = activation_table.get_item(
+            Key={"code": activation_code}
+        )
 
-    now = int(time.time())
+        if "Item" not in code_resp:
+            return {"status": "error", "message": "activation code invalid"}
 
+        code_item = code_resp["Item"]
+        thing_name = code_item["thingName"]
+        plan_seconds = int(code_item["planSeconds"])
+        new_expires_at = now + plan_seconds
 
-    # Generar código único (retry simple)
-    for _ in range(3):
-        code = _generate_code()
+        # Obtener certificateId
+        device_resp = device_table.get_item(
+            Key={"thingName": thing_name},
+            ProjectionExpression="certificateId, lifecycleStatus, userId"
+        )
+
+        if "Item" not in device_resp:
+            return {"status": "error", "message": "device not found"}
+
+        cert_id = device_resp["Item"]["certificateId"]
+
+        # Actualizar metadata (paso CRÍTICO)
         try:
-            table.put_item(
-                Item={
-                    "code": code,
-                    "userId": user_id,
-                    "status": "active",  # activo hasta usar
-                    "createdAt": now,
-                    "usedAt": None
+            device_table.update_item(
+                Key={"thingName": thing_name},
+                UpdateExpression="""
+                    SET userId = :uid,
+                        activatedBy = if_not_exists(activatedBy, :uid),
+                        activatedAt = if_not_exists(activatedAt, :now),
+                        lastRenewalDate = :now,
+                        expiresAt = :exp,
+                        lifecycleStatus = :active,
+                        lifecycleBucket = :bucket
+                """,
+                ConditionExpression="""
+                    lifecycleStatus IN (:trial, :expired)
+                    AND (attribute_not_exists(userId) OR userId = :uid)
+                """,
+                ExpressionAttributeValues={
+                    ":uid": cognito_sub,
+                    ":now": now,
+                    ":exp": new_expires_at,
+                    ":active": "ACTIVE",
+                    ":trial": "TRIAL",
+                    ":expired": "EXPIRED",
+                    ":bucket": _bucket(now),
                 },
-                ConditionExpression="attribute_not_exists(code)",  # evita colisiones
             )
-            break
-        except Exception:
-            code = None
 
-    if not code:
-        return _error("could not generate unique code")
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return {
+                    "status": "error",
+                    "message": "device already activated or owned by another user",
+                }
+            raise
 
-    # Retorna código generado para que el admin se lo entregue al usuario
-    return {
-        "status": "ok",
-        "activationCode": code,
-        "userId": user_id,
-    }
+        # Reactivar certificado si estaba inactivo
+        try:
+            cert_desc = iot.describe_certificate(
+                certificateId=cert_id
+            )["certificateDescription"]
 
-def _error(msg):
-    return {"status": "error", "message": msg}
+            if cert_desc["status"] != "ACTIVE":
+                iot.update_certificate(
+                    certificateId=cert_id,
+                    newStatus="ACTIVE"
+                )
+        except ClientError as cert_error:
+            print(f"Certificate update failed {cert_id}: {cert_error}")
+            # NO abortamos: metadata ya es la fuente de verdad
+
+        # Actualizar atributo userId en el Thing
+        try:
+            iot.update_thing(
+                thingName=thing_name,
+                attributePayload={
+                    "attributes": {"userId": cognito_sub},
+                    "merge": True,
+                },
+            )
+        except ClientError as thing_error:
+            print(f"Thing update failed {thing_name}: {thing_error}")
+
+        # Borrar activation code (ÚLTIMO PASO)
+        try:
+            activation_table.delete_item(
+                Key={"code": activation_code},
+                ConditionExpression="attribute_exists(thingName) AND thingName = :tn",
+                ExpressionAttributeValues={":tn": thing_name},
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+
+        return {
+            "status": "ok",
+            "thingName": thing_name,
+            "activatedAt": now,
+            "expiresAt": new_expires_at,
+            "newTelemetryTopic": f"gateway/{cognito_sub}/data/telemetry",
+        }
+
+    except Exception as e:
+        print("ConsumeActivationCode error:", str(e))
+        return {"status": "error", "message": "internal error"}

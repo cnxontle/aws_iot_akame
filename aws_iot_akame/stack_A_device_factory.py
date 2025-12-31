@@ -75,32 +75,20 @@ class DeviceFactoryStack(Stack):
         )
 
         metadata_table.add_global_secondary_index(
-            index_name="ByActivationCode",
-            partition_key={
-                "name": "activationCode",
-                "type": dynamodb.AttributeType.STRING,
-            },
-            projection_type=dynamodb.ProjectionType.ALL,
+            index_name="ByLifecycleBucket",
+            partition_key=dynamodb.Attribute(name="lifecycleBucket", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="expiresAt", type=dynamodb.AttributeType.NUMBER),
+            projection_type=dynamodb.ProjectionType.INCLUDE,
+            non_key_attributes=["thingName", "certificateId"],
         )
 
 
-        metadata_table.add_global_secondary_index(
-            index_name="ByStatusExpiry",
-            partition_key=dynamodb.Attribute(
-                name="lifecycleStatus",
-                type=dynamodb.AttributeType.STRING,
-            ),
-            sort_key=dynamodb.Attribute(
-                name="expiresAt",
-                type=dynamodb.AttributeType.NUMBER,
-            ),
-            projection_type=dynamodb.ProjectionType.INCLUDE,
-            non_key_attributes=[
-                "thingName",
-                "certificateId",
-                "certificateArn",
-                "status"
-            ],
+        activation_code_table = dynamodb.Table(
+            self,
+            "ActivationCodeTable",
+            partition_key=dynamodb.Attribute(name="code", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
         )
 
 
@@ -113,12 +101,14 @@ class DeviceFactoryStack(Stack):
             code=lambda_.Code.from_asset("lambda/device_factory"),
             timeout=Duration.seconds(30),
             environment={
-                "TABLE_NAME": metadata_table.table_name,
-                "DEFAULT_EXPIRATION_SECONDS": str(30 * 24 * 3600),  # 30 días
+                "METADATA_TABLE": metadata_table.table_name,
+                "ACTIVATION_CODE_TABLE": activation_code_table.table_name,
+                "DEFAULT_EXPIRATION_SECONDS": str(3 * 24 * 3600),
             }
         )
 
         lambda_fn.node.add_dependency(gateway_thing_type)
+        lambda_fn.node.add_dependency(gateway_policy)
 
         # --- IAM IoT permissions ---
         lambda_fn.add_to_role_policy(
@@ -139,5 +129,9 @@ class DeviceFactoryStack(Stack):
 
         # --- DynamoDB permissions ---
         metadata_table.grant_read_write_data(lambda_fn)
-        self.gateway_policy = gateway_policy
+        activation_code_table.grant_read_write_data(lambda_fn)
+
+        #--- Store references ---
         self.metadata_table = metadata_table
+        self.activation_code_table = activation_code_table
+        self.lambda_fn = lambda_fn

@@ -8,7 +8,6 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-
 class CertificateLifecycleStack(Stack):
     def __init__(self, scope: Construct, id: str, metadata_table, **kwargs):
         super().__init__(scope, id, **kwargs)
@@ -23,11 +22,11 @@ class CertificateLifecycleStack(Stack):
             memory_size=256,
             environment={
                 "DEVICE_METADATA_TABLE": metadata_table.table_name,
-                "LIFECYCLE_GSI": "ByStatusExpiry"
             }
         )
 
-        metadata_table.grant_read_data(lifecycle_fn)
+        # Permisos completos necesarios
+        metadata_table.grant_read_write_data(lifecycle_fn)
 
         lifecycle_fn.add_to_role_policy(
             iam.PolicyStatement(
@@ -35,12 +34,11 @@ class CertificateLifecycleStack(Stack):
                     "iot:UpdateCertificate",
                     "iot:DescribeCertificate",
                 ],
-                resources=[
-                    f"arn:aws:iot:{self.region}:{self.account}:cert/*"
-                ]
+                resources=[f"arn:aws:iot:{self.region}:{self.account}:cert/*"]
             )
         )
 
+        # EventBridge rule cada 30 minutos
         events.Rule(
             self,
             "CertificateLifecycleSchedule",
