@@ -20,7 +20,6 @@ class CertificateLifecycleStack(Stack):
             code=lambda_.Code.from_asset("lambda/certificate_lifecycle"),
             timeout=Duration.seconds(300),
             memory_size=256,
-            reserved_concurrent_executions=1,
             environment={
                 "DEVICE_METADATA_TABLE": metadata_table.table_name,
             }
