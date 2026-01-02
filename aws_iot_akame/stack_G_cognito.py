@@ -1,9 +1,11 @@
 from aws_cdk import (
     Stack,
     CfnOutput,
+    RemovalPolicy,
     aws_cognito as cognito,
 )
 from constructs import Construct
+
 
 
 class CognitoStack(Stack):
@@ -15,6 +17,7 @@ class CognitoStack(Stack):
             self,
             "AkameUserPool",
             user_pool_name="akame-user-pool",
+            self_sign_up_enabled=True,
 
             # Login por email
             sign_in_aliases=cognito.SignInAliases(
@@ -26,7 +29,7 @@ class CognitoStack(Stack):
                 min_length=8,
                 require_digits=True,
                 require_lowercase=True,
-                require_uppercase=True,
+                require_uppercase=False,
                 require_symbols=False,
             ),
 
@@ -38,8 +41,9 @@ class CognitoStack(Stack):
             # Recuperación de cuenta
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
 
-            # Eliminación en dev (cambia a RETAIN en prod)
-            removal_policy=None,
+            # Mantener la tabla al borrar el stack
+            removal_policy=RemovalPolicy.RETAIN
+
         )
 
         # App Client (Android / frontend)

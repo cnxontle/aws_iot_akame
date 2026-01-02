@@ -1,6 +1,7 @@
 import os
 import time
 import boto3
+import json
 from botocore.exceptions import ClientError
 from datetime import datetime, timezone
 
@@ -18,11 +19,17 @@ def _bucket_for_expiry(expires_at: int) -> str:
     return f"ACTIVE#{datetime.fromtimestamp(expires_at, tz=timezone.utc):%Y%m%d%H}"
 
 
-
 def main(event, context):
     try:
-        activation_code = event.get("activationCode")
-        cognito_sub = event.get("cognitoSub")
+        body = json.loads(event.get("body", "{}"))
+        activation_code = body.get("activationCode")
+        cognito_sub = (
+            event["requestContext"]
+            ["authorizer"]
+            ["jwt"]
+            ["claims"]
+            ["sub"]
+        )
 
         if not activation_code or not cognito_sub:
             return {"status": "error", "message": "invalid input"}
@@ -128,13 +135,24 @@ def main(event, context):
                 raise
 
         return {
-            "status": "ok",
-            "thingName": thing_name,
-            "activatedAt": now,
-            "expiresAt": new_expires_at,
-            "newTelemetryTopic": f"gateway/{cognito_sub}/data/telemetry",
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({
+                "status": "ok",
+                "thingName": thing_name,
+                "activatedAt": now,
+                "expiresAt": new_expires_at,
+                "newTelemetryTopic": f"gateway/{cognito_sub}/data/telemetry",
+            })
         }
 
     except Exception as e:
         print("ConsumeActivationCode error:", str(e))
-        return {"status": "error", "message": "internal error"}
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({
+                "status": "error",
+                "message": "internal error"
+            })
+        }

@@ -27,7 +27,7 @@ def main(event, context):
     expired_devices = []
 
     # --- Consultar buckets exactos de esta hora ---
-    LOOKBACK_HOURS = 12
+    LOOKBACK_HOURS = 24
    
     for prefix in BUCKET_PREFIXES:
         for offset in range(LOOKBACK_HOURS):

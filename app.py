@@ -8,6 +8,7 @@ from aws_iot_akame.stack_C_certificate_lifecycle import CertificateLifecycleStac
 from aws_iot_akame.stack_D_renewal import RenewalStack
 from aws_iot_akame.stack_G_cognito import CognitoStack
 from aws_iot_akame.stack_H_activation_code import ActivationCodeStack
+from aws_iot_akame.stack_E_activation_api import ActivationApiStack
 
 
 app = cdk.App()
@@ -48,6 +49,7 @@ renewal = RenewalStack(
     env=env
 )
 
+
 # Módulo G
 cognito = CognitoStack(
     app,
@@ -61,6 +63,16 @@ activation_code = ActivationCodeStack(
     "ActivationCodeStack",
     metadata_table=factory.metadata_table,   # PASA LA TABLA
     activation_code_table=factory.activation_code_table,  # PASA LA TABLA
+    env=env
+)
+
+# Módulo E
+activation_api = ActivationApiStack(
+    app,
+    "ActivationApiStack",
+    consume_lambda=activation_code.consume_lambda,  
+    user_pool=cognito.user_pool,                      
+    user_pool_client=cognito.user_pool_client,        
     env=env
 )
 
