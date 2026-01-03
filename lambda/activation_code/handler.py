@@ -30,10 +30,20 @@ def main(event, context):
             ["claims"]
             ["sub"]
         )
-        display_name = body.get("displayName", "unassigned")
+        display_name = body.get("displayName")
+        if not display_name or not display_name.strip():
+            display_name = "unassigned"
+
 
         if not activation_code or not cognito_sub:
-            return {"status": "error", "message": "invalid input"}
+            return {
+                "statusCode": 400,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "status": "error",
+                    "message": "invalid input"
+                })
+            }
 
         now = int(time.time())
 
@@ -43,7 +53,14 @@ def main(event, context):
         )
 
         if "Item" not in code_resp:
-            return {"status": "error", "message": "activation code invalid"}
+            return {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "status": "error",
+                    "message": "activation code invalid"
+                })
+            }
 
         code_item = code_resp["Item"]
         thing_name = code_item["thingName"]
@@ -57,7 +74,14 @@ def main(event, context):
         )
 
         if "Item" not in device_resp:
-            return {"status": "error", "message": "device not found"}
+            return {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "status": "error",
+                    "message": "device not found"
+                })
+            }
 
         cert_id = device_resp["Item"]["certificateId"]
 
@@ -94,8 +118,12 @@ def main(event, context):
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 return {
-                    "status": "error",
-                    "message": "device already activated or owned by another user",
+                    "statusCode": 409,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({
+                        "status": "error",
+                        "message": "device already activated or owned by another user"
+                    })
                 }
             raise
 
@@ -146,7 +174,7 @@ def main(event, context):
             "body": json.dumps({
                 "status": "ok",
                 "thingName": thing_name,
-                "activatedAt": now,
+                "lastRenewalDate": now,
                 "expiresAt": new_expires_at,
                 "userId": cognito_sub
             })
