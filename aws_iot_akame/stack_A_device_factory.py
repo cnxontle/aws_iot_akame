@@ -39,14 +39,14 @@ class DeviceFactoryStack(Stack):
                             "iot:Receive"
                         ],
                         "Resource": [
-                            "arn:aws:iot:*:*:topic/gateway/${iot:Connection.Thing.Attributes[userId]}/data/telemetry"
+                            "arn:aws:iot:*:*:topic/gateway/data/telemetry/${iot:Connection.Thing.ThingName}"
                         ]
                     },
                     {
                         "Effect": "Allow",
                         "Action": "iot:Subscribe",
                         "Resource": [
-                            "arn:aws:iot:*:*:topicfilter/gateway/${iot:Connection.Thing.Attributes[userId]}/command/*"
+                            "arn:aws:iot:*:*:topicfilter/gateway/${iot:Connection.Thing.ThingName}/command/*"
                         ]
                     }
                 ]

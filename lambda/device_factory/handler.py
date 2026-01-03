@@ -85,7 +85,7 @@ def main(event, context):
 
         # --- Código de activación ---
         activation_code = None
-        for _ in range(3):
+        for _ in range(10):
             code = _generate_activation_code()
             try:
                 activation_table.put_item(
@@ -135,7 +135,7 @@ def main(event, context):
             "certificatePem": cert["certificatePem"],
             "privateKey": cert["keyPair"]["PrivateKey"],
             "publicKey": cert["keyPair"]["PublicKey"],
-            "gatewayTopic": "gateway/unassigned/data/telemetry",
+            "gatewayTopic": "gateway/data/telemetry/" + thing_name,
         }
 
     except Exception as e:

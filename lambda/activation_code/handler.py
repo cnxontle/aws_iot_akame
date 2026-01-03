@@ -143,7 +143,7 @@ def main(event, context):
                 "thingName": thing_name,
                 "activatedAt": now,
                 "expiresAt": new_expires_at,
-                "newTelemetryTopic": f"gateway/{cognito_sub}/data/telemetry",
+                "userId": cognito_sub
             })
         }
 
