@@ -30,6 +30,7 @@ def main(event, context):
             ["claims"]
             ["sub"]
         )
+        display_name = body.get("displayName", "unassigned")
 
         if not activation_code or not cognito_sub:
             return {"status": "error", "message": "invalid input"}
@@ -67,11 +68,11 @@ def main(event, context):
                 UpdateExpression="""
                     SET userId = :uid,
                         activatedBy = if_not_exists(activatedBy, :uid),
-                        activatedAt = if_not_exists(activatedAt, :now),
                         lastRenewalDate = :now,
                         expiresAt = :exp,
                         lifecycleStatus = :active,
                         lifecycleBucket = :bucket
+                        displayName = :dn
                 """,
                 ConditionExpression="""
                     lifecycleStatus IN (:trial, :expired)
@@ -86,6 +87,7 @@ def main(event, context):
                     ":expired": "EXPIRED",
                     ":unassigned_val": "unassigned",
                     ":bucket": _bucket_for_expiry(new_expires_at),
+                    ":dn": display_name
                 },
             )
 
@@ -117,7 +119,10 @@ def main(event, context):
             iot.update_thing(
                 thingName=thing_name,
                 attributePayload={
-                    "attributes": {"userId": cognito_sub},
+                    "attributes": {
+                        "userId": cognito_sub,
+                        "displayName": display_name
+                        },
                     "merge": True,
                 },
             )

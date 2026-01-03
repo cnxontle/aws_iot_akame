@@ -120,7 +120,6 @@ def main(event, context):
                 "certificateArn": cert_arn,
                 "certificateId": cert_id,
                 "createdAt": now,
-                "activatedAt": None,
                 "lastRenewalDate": None,
                 "expiredAt": None,
                 "expiresAt": expires_at,
