@@ -71,7 +71,7 @@ def main(event, context):
                         lastRenewalDate = :now,
                         expiresAt = :exp,
                         lifecycleStatus = :active,
-                        lifecycleBucket = :bucket
+                        lifecycleBucket = :bucket,
                         displayName = :dn
                 """,
                 ConditionExpression="""
