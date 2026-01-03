@@ -35,10 +35,22 @@ def _generate_activation_code() -> str:
 
 
 def main(event, context):
+    plan_days = None
+    try:
+        plan_days = int(event.get("planDays")) if event.get("planDays") else None
+    except (ValueError, TypeError):
+        plan_days = None
+
+
     try:
         now = int(time.time())
-        expires_at = now + DEFAULT_EXPIRATION_SECONDS
 
+        if plan_days and plan_days > 0:
+            plan_seconds = plan_days * 24 * 3600
+        else:
+            plan_seconds = DEFAULT_EXPIRATION_SECONDS
+
+        expires_at = now + DEFAULT_EXPIRATION_SECONDS
         thing_name = f"gw_{uuid4().hex}"
 
         # --- Crear Thing ---
@@ -93,7 +105,7 @@ def main(event, context):
                         "code": code,
                         "thingName": thing_name,
                         "createdAt": now,
-                        "planSeconds": DEFAULT_EXPIRATION_SECONDS,
+                        "planSeconds": plan_seconds,
                     },
                     ConditionExpression="attribute_not_exists(code)",
                 )
