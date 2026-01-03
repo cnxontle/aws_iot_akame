@@ -75,7 +75,7 @@ def main(event, context):
                 """,
                 ConditionExpression="""
                     lifecycleStatus IN (:trial, :expired)
-                    AND (attribute_not_exists(userId) OR userId = :uid)
+                    AND (attribute_not_exists(userId) OR userId = :unassigned_val)
                 """,
                 ExpressionAttributeValues={
                     ":uid": cognito_sub,
@@ -84,6 +84,7 @@ def main(event, context):
                     ":active": "ACTIVE",
                     ":trial": "TRIAL",
                     ":expired": "EXPIRED",
+                    ":unassigned_val": "unassigned",
                     ":bucket": _bucket_for_expiry(new_expires_at),
                 },
             )
