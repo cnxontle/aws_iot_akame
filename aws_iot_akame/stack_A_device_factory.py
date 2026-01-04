@@ -79,7 +79,7 @@ class DeviceFactoryStack(Stack):
             partition_key=dynamodb.Attribute(name="lifecycleBucket", type=dynamodb.AttributeType.STRING),
             sort_key=dynamodb.Attribute(name="expiresAt", type=dynamodb.AttributeType.NUMBER),
             projection_type=dynamodb.ProjectionType.INCLUDE,
-            non_key_attributes=["thingName", "certificateId"],
+            non_key_attributes=["thingName", "certificateId", "lifecycleStatus",],
         )
 
 

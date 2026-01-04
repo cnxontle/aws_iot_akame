@@ -37,20 +37,20 @@ def main(event, context):
 
             while True:
                 try:
-                    response = device_table.query(
-                        IndexName="ByLifecycleBucket",
-                        KeyConditionExpression="lifecycleBucket = :bucket AND expiresAt <= :now",
-                        ExpressionAttributeValues={
+                    query_kwargs = {
+                        "IndexName": "ByLifecycleBucket",
+                        "KeyConditionExpression": "lifecycleBucket = :bucket AND expiresAt <= :now",
+                        "ExpressionAttributeValues": {
                             ":bucket": bucket,
                             ":now": now,
                         },
-                        ProjectionExpression="thingName, certificateId, lifecycleStatus",
-                        ExclusiveStartKey=last_evaluated_key if last_evaluated_key else None,
-                    )
-
+                        "ProjectionExpression": "thingName, certificateId, lifecycleStatus",
+                    }
+                    if last_evaluated_key:
+                        query_kwargs["ExclusiveStartKey"] = last_evaluated_key
+                    response = device_table.query(**query_kwargs)
                     expired_devices.extend(response.get("Items", []))
                     last_evaluated_key = response.get("LastEvaluatedKey")
-
                     if not last_evaluated_key:
                         break
 
@@ -61,9 +61,6 @@ def main(event, context):
     # --- Procesar expiraciones ---
     processed = 0
     for device in expired_devices:
-        if device.get("lifecycleStatus") not in ("TRIAL", "ACTIVE"):
-            continue
-
         thing_name = device["thingName"]
         cert_id = device["certificateId"]
 
