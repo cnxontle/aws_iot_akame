@@ -9,6 +9,12 @@ from aws_iot_akame.stack_D_renewal import RenewalStack
 from aws_iot_akame.stack_G_cognito import CognitoStack
 from aws_iot_akame.stack_H_activation_code import ActivationCodeStack
 from aws_iot_akame.stack_E_activation_api import ActivationApiStack
+from aws_iot_akame.stack_I_ingestion import TelemetryIngestionStack
+from aws_iot_akame.stack_L_telemetry_analytics import TelemetryAnalyticsStack
+from aws_iot_akame.stack_M_telemetry_query import TelemetryQueryStack
+from aws_iot_akame.stack_N_telemetry_athena_view import TelemetryAthenaViewsStack
+from aws_iot_akame.stack_O_telemetry_aggregates_api import TelemetryAggregatesApiStack
+from aws_iot_akame.stack_P_telemetry_api import TelemetryApiStack
 
 
 app = cdk.App()
@@ -76,6 +82,59 @@ activation_api = ActivationApiStack(
     env=env
 )
 
+# Módulo I
+telemetry_ingestion = TelemetryIngestionStack(  
+    app,
+    "TelemetryIngestionStack",
+    env=env
+)
+
+# Módulo L
+telemetry_analytics = TelemetryAnalyticsStack(
+    app,
+    "TelemetryAnalyticsStack",
+    telemetry_bucket_name=telemetry_ingestion.telemetry_bucket.bucket_name,
+    env=env
+)
+
+# Módulo M
+telemetry_query = TelemetryQueryStack(
+    app,
+    "TelemetryQueryStack",
+    metadata_table=factory.metadata_table,  
+    athena_database=telemetry_analytics.athena_database,
+    athena_output_bucket=telemetry_analytics.athena_output_bucket,
+    env=env
+)
+
+# Módulo N
+telemetry_athena_views = TelemetryAthenaViewsStack(
+    app,
+    "TelemetryAthenaViewsStack",
+    athena_database=telemetry_analytics.athena_database,
+    athena_output_bucket=telemetry_analytics.athena_output_bucket,
+    env=env
+)
+
+# Módulo O
+telemetry_aggregates_api = TelemetryAggregatesApiStack(
+    app,
+    "TelemetryAggregatesApiStack",
+    metadata_table_name=factory.metadata_table.table_name,
+    athena_database=telemetry_analytics.athena_database,
+    athena_output_bucket=telemetry_analytics.athena_output_bucket,
+    env=env
+)
+
+# Módulo P
+telemetry_api = TelemetryApiStack(
+    app,
+    "TelemetryApiStack",
+    query_lambda=telemetry_query.lambda_function,
+    user_pool=cognito.user_pool,
+    user_pool_client=cognito.user_pool_client,
+    env=env
+)
 
 app.synth()
 

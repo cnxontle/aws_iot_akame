@@ -18,6 +18,8 @@ class TelemetryIngestionStack(Stack):
         telemetry_bucket = s3.Bucket(
             self,
             "TelemetryRawBucket",
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.RETAIN,
             lifecycle_rules=[
                 s3.LifecycleRule(
@@ -46,7 +48,7 @@ class TelemetryIngestionStack(Stack):
                 role_arn=firehose_role.role_arn,
                 buffering_hints=firehose.CfnDeliveryStream.BufferingHintsProperty(
                     interval_in_seconds=60,
-                    size_in_m_bs=5,
+                    size_in_mbs=5,
                 ),
                 compression_format="GZIP",
                 prefix=(
@@ -69,7 +71,9 @@ class TelemetryIngestionStack(Stack):
 
         iot_rule_role.add_to_policy(
             iam.PolicyStatement(
-                actions=["firehose:PutRecord"],
+                actions=["firehose:PutRecord",
+                         "firehose:PutRecordBatch",
+                         ],
                 resources=[delivery_stream.attr_arn],
             )
         )
