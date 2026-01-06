@@ -117,3 +117,4 @@ class TelemetryAnalyticsStack(Stack):
         self.athena_database = database.ref
         self.athena_output_bucket = athena_output_bucket.bucket_name
         self.telemetry_bucket_name = telemetry_bucket_name
+        self.athena_output_bucket = athena_output_bucket

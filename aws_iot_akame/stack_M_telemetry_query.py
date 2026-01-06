@@ -54,6 +54,7 @@ class TelemetryQueryStack(Stack):
                 "METADATA_TABLE": metadata_table.table_name,
                 "ATHENA_DATABASE": athena_database,
                 "ATHENA_OUTPUT": f"s3://{output_bucket_name}/",
+                "ATHENA_WORKGROUP": "telemetry-prod",
             },
         )
 
@@ -68,7 +69,7 @@ class TelemetryQueryStack(Stack):
                     "athena:GetQueryExecution",
                     "athena:GetQueryResults",
                 ],
-                resources=["*"],
+                resources=[f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"],
             )
         )
 

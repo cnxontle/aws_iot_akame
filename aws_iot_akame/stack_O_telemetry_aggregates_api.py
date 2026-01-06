@@ -33,6 +33,7 @@ class TelemetryAggregatesApiStack(Stack):
                 "METADATA_TABLE": metadata_table_name,
                 "ATHENA_DATABASE": athena_database,
                 "ATHENA_OUTPUT": f"s3://{athena_output_bucket}/",
+                "ATHENA_WORKGROUP": "telemetry-prod",
             },
         )
 
@@ -57,7 +58,7 @@ class TelemetryAggregatesApiStack(Stack):
                     "athena:GetQueryExecution",
                     "athena:GetQueryResults",
                 ],
-                resources=["*"],
+                resources=[f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"],
             )
         )
 

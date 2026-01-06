@@ -37,6 +37,7 @@ class TelemetryApiStack(Stack):
             "TelemetryHttpApi",
             api_name="telemetry-api",
             description="Telemetry query API (Athena-backed)",
+            create_default_stage=False,
         )
 
         # Lambda integration
@@ -45,6 +46,18 @@ class TelemetryApiStack(Stack):
             handler=query_lambda,
         )
 
+        # aggregar permisos
+        query_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                resources=["*"],
+            )
+        )
+      
         # Route: GET /telemetry/query
         api.add_routes(
             path="/telemetry/query",
@@ -61,7 +74,7 @@ class TelemetryApiStack(Stack):
             stage_name="prod",
             auto_deploy=True,
             throttle=apigwv2.ThrottleSettings(
-                rate_limit=10,   # 10 req/seg por cliente
+                rate_limit=10,   # 10 req/seg 
                 burst_limit=20,  # picos cortos
             ),
         )
@@ -70,7 +83,7 @@ class TelemetryApiStack(Stack):
         CfnOutput(
             self,
             "TelemetryApiUrl",
-            value=api.api_endpoint,
+            value=f"{api.api_endpoint}/prod",
         )
 
         self.api = api

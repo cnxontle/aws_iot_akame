@@ -35,14 +35,11 @@ WHERE
 def main(event, context):
     if event["RequestType"] == "Delete":
         return {"status": "skipped"}
- 
-    if event["RequestType"] == "Update":
-        return {"status": "skipped"}
 
     res = athena.start_query_execution(
         QueryString=VIEW_SQL,
         QueryExecutionContext={"Database": DATABASE},
-        ResultConfiguration={"OutputLocation": OUTPUT},
+        WorkGroup=os.environ["ATHENA_WORKGROUP"],
     )
 
     qid = res["QueryExecutionId"]

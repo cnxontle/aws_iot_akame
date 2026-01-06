@@ -48,7 +48,7 @@ class TelemetryIngestionStack(Stack):
                 role_arn=firehose_role.role_arn,
                 buffering_hints=firehose.CfnDeliveryStream.BufferingHintsProperty(
                     interval_in_seconds=60,
-                    size_in_mbs=5,
+                    size_in_m_bs=5,
                 ),
                 compression_format="GZIP",
                 prefix=(

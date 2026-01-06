@@ -31,6 +31,7 @@ class TelemetryAthenaViewsStack(Stack):
             environment={
                 "ATHENA_DATABASE": athena_database,
                 "ATHENA_OUTPUT": f"s3://{athena_output_bucket}/",
+                "ATHENA_WORKGROUP": "telemetry-prod",
             },
         )
 
@@ -44,7 +45,7 @@ class TelemetryAthenaViewsStack(Stack):
                     "glue:GetTable",
                     "glue:CreateTable",
                 ],
-                resources=["*"],
+                resources=[f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"],
             )
         )
 

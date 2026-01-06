@@ -15,6 +15,7 @@ from aws_iot_akame.stack_M_telemetry_query import TelemetryQueryStack
 from aws_iot_akame.stack_N_telemetry_athena_view import TelemetryAthenaViewsStack
 from aws_iot_akame.stack_O_telemetry_aggregates_api import TelemetryAggregatesApiStack
 from aws_iot_akame.stack_P_telemetry_api import TelemetryApiStack
+from aws_iot_akame.stack_Q_telemetry_athena_workgroup import TelemetryAthenaWorkGroupStack
 
 
 app = cdk.App()
@@ -135,6 +136,15 @@ telemetry_api = TelemetryApiStack(
     user_pool_client=cognito.user_pool_client,
     env=env
 )
+
+# Módulo Q
+telemetry_athena_workgroup = TelemetryAthenaWorkGroupStack(
+    app,
+    "TelemetryAthenaWorkGroupStack",
+    athena_output_bucket=telemetry_analytics.athena_output_bucket,
+    env=env
+)   
+
 
 app.synth()
 
