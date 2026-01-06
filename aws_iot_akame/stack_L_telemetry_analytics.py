@@ -51,6 +51,7 @@ class TelemetryAnalyticsStack(Stack):
                 parameters={
                     "classification": "json",
                     "compressionType": "gzip",
+                    "json.open.content": "true",
 
                     # PARTITION PROJECTION
                     "projection.enabled": "true",
@@ -99,14 +100,7 @@ class TelemetryAnalyticsStack(Stack):
                         glue.CfnTable.ColumnProperty(name="ingestedAt", type="bigint"),
                         glue.CfnTable.ColumnProperty(
                             name="readings",
-                            type="""
-                            array<
-                                struct<
-                                    nodeId:int,
-                                    metrics:map<string,double>
-                                >
-                            >
-                            """.strip(),
+                            type="array<struct<nodeId:int,humidity:double,raw:int,soil_moisture:double,soil_temperature:double,soil_ph:double,soil_ec:double,soil_nitrogen:double,soil_phosphorus:double,soil_potassium:double,soil_salinity:double,air_temperature:double,air_humidity:double,air_pressure:double,wind_speed:double,rainfall:double,solar_radiation:double,co2_level:double,leaf_wetness:double,pm1:double,pm2_5:double,pm10:double,voc:double,o3_level:double,no2_level:double,so2_level:double,battery_voltage:double,battery_level:double,battery_health:double,signal_strength:int,device_temperature:double,uptime:bigint>>",
                         ),
                     ],
                 ),

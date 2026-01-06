@@ -24,9 +24,8 @@ class TelemetryQueryStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # ─────────────────────────────────────────────
+
         # Normalizar bucket (string o IBucket)
-        # ─────────────────────────────────────────────
         if isinstance(athena_output_bucket, str):
             output_bucket = s3.Bucket.from_bucket_name(
                 self,
@@ -38,9 +37,7 @@ class TelemetryQueryStack(Stack):
             output_bucket = athena_output_bucket
             output_bucket_name = athena_output_bucket.bucket_name
 
-        # ─────────────────────────────────────────────
         # Lambda de query
-        # ─────────────────────────────────────────────
         query_lambda = lambda_.Function(
             self,
             "TelemetryQueryLambda",

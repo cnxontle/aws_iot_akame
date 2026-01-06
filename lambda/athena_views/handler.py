@@ -15,20 +15,53 @@ SELECT
     r.event_ts AS timestamp,
     r.ingestedAt,
     rd.nodeId,
-    m.key   AS metric_key,
-    m.value AS metric_value,
+    -- Métricas actuales
+    rd.humidity,
+    rd.raw,
+    -- Métricas de suelo
+    rd.soil_moisture,
+    rd.soil_temperature,
+    rd.soil_ph,
+    rd.soil_ec,
+    rd.soil_nitrogen,
+    rd.soil_phosphorus,
+    rd.soil_potassium,
+    rd.soil_salinity,
+    -- Métricas ambientales
+    rd.air_temperature,
+    rd.air_humidity,
+    rd.air_pressure,
+    rd.wind_speed,
+    rd.rainfall,
+    rd.solar_radiation,
+    rd.co2_level,
+    rd.leaf_wetness,
+    -- Calidad del aire
+    rd.pm1,
+    rd.pm2_5,
+    rd.pm10,
+    rd.voc,
+    rd.o3_level,
+    rd.no2_level,
+    rd.so2_level,
+    -- Métricas del dispositivo
+    rd.battery_voltage,
+    rd.battery_level,
+    rd.battery_health,
+    rd.signal_strength,
+    rd.device_temperature,
+    rd.uptime,
     year,
     month,
     day,
     hour
 FROM telemetry.telemetry_raw r
 CROSS JOIN UNNEST(r.readings) AS t(rd)
-CROSS JOIN UNNEST(rd.metrics) AS m
 WHERE
-   year IS NOT NULL
-   AND month IS NOT NULL
-   AND day IS NOT NULL
-   AND hour IS NOT NULL;
+    year IS NOT NULL
+    AND month IS NOT NULL
+    AND day IS NOT NULL
+    AND hour IS NOT NULL
 """
 
 
@@ -40,6 +73,7 @@ def main(event, context):
         QueryString=VIEW_SQL,
         QueryExecutionContext={"Database": DATABASE},
         WorkGroup=os.environ["ATHENA_WORKGROUP"],
+        ResultConfiguration={"OutputLocation": OUTPUT},
     )
 
     qid = res["QueryExecutionId"]
@@ -58,6 +92,7 @@ def main(event, context):
         time.sleep(1)
 
     if state != "SUCCEEDED":
-        raise RuntimeError("Failed to create Athena view")
+        reason = status["QueryExecution"]["Status"].get("StateChangeReason", "No reason provided")
+        raise RuntimeError(f"Athena query FAILED: {state} - {reason}")
 
     return {"status": "ok"}

@@ -44,17 +44,38 @@ class TelemetryAthenaViewsStack(Stack):
                     "glue:GetDatabase",
                     "glue:GetTable",
                     "glue:CreateTable",
+                    "glue:UpdateTable",
+                    "glue:DeleteTable",
                 ],
-                resources=[f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"],
+                resources=[f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod",
+                    f"arn:aws:glue:{self.region}:{self.account}:catalog",
+                    f"arn:aws:glue:{self.region}:{self.account}:database/{athena_database}",
+                    f"arn:aws:glue:{self.region}:{self.account}:table/{athena_database}/*", 
+                ],
             )
         )
 
         view_lambda.add_to_role_policy(
             iam.PolicyStatement(
-                actions=["s3:PutObject"],
-                resources=[f"arn:aws:s3:::{athena_output_bucket}/*"],
+                actions=[
+                    "s3:GetBucketLocation",
+                    "s3:ListBucket",
+                ],
+                resources=[athena_output_bucket.bucket_arn],
             )
         )
+
+        view_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                ],
+                resources=[f"{athena_output_bucket.bucket_arn}/*"],
+            )
+        )
+
 
         provider = cr.Provider(
             self,

@@ -98,20 +98,31 @@ telemetry_analytics = TelemetryAnalyticsStack(
     env=env
 )
 
-# Módulo M
-telemetry_query = TelemetryQueryStack(
+
+
+# Módulo Q
+telemetry_athena_workgroup = TelemetryAthenaWorkGroupStack(
     app,
-    "TelemetryQueryStack",
-    metadata_table=factory.metadata_table,  
-    athena_database=telemetry_analytics.athena_database,
+    "TelemetryAthenaWorkGroupStack",
     athena_output_bucket=telemetry_analytics.athena_output_bucket,
     env=env
-)
+)   
 
 # Módulo N
 telemetry_athena_views = TelemetryAthenaViewsStack(
     app,
     "TelemetryAthenaViewsStack",
+    athena_database=telemetry_analytics.athena_database,
+    athena_output_bucket=telemetry_analytics.athena_output_bucket,
+    env=env
+)
+telemetry_athena_views.add_dependency(telemetry_athena_workgroup)
+
+# Módulo M
+telemetry_query = TelemetryQueryStack(
+    app,
+    "TelemetryQueryStack",
+    metadata_table=factory.metadata_table,  
     athena_database=telemetry_analytics.athena_database,
     athena_output_bucket=telemetry_analytics.athena_output_bucket,
     env=env
@@ -137,13 +148,7 @@ telemetry_api = TelemetryApiStack(
     env=env
 )
 
-# Módulo Q
-telemetry_athena_workgroup = TelemetryAthenaWorkGroupStack(
-    app,
-    "TelemetryAthenaWorkGroupStack",
-    athena_output_bucket=telemetry_analytics.athena_output_bucket,
-    env=env
-)   
+
 
 
 app.synth()
