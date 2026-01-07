@@ -1,6 +1,7 @@
 from aws_cdk import (
     Stack,
     Duration,
+    Fn,
     aws_lambda as lambda_,
     aws_iam as iam,
     aws_dynamodb as dynamodb,
@@ -23,7 +24,6 @@ class TelemetryQueryStack(Stack):
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
 
         # Normalizar bucket (string o IBucket)
         if isinstance(athena_output_bucket, str):
@@ -58,7 +58,7 @@ class TelemetryQueryStack(Stack):
         # DynamoDB (GSI ByUser)
         metadata_table.grant_read_data(query_lambda)
 
-        # Athena
+        # Athena permissions
         query_lambda.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -66,12 +66,49 @@ class TelemetryQueryStack(Stack):
                     "athena:GetQueryExecution",
                     "athena:GetQueryResults",
                 ],
-                resources=[f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"],
+                resources=[
+                    f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"
+                ],
             )
         )
 
-        # S3 resultados Athena
+        # Glue permissions
+        query_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "glue:GetDatabase",
+                    "glue:GetTable",
+                    "glue:GetPartitions",
+                ],
+                resources=[
+                    f"arn:aws:glue:{self.region}:{self.account}:catalog",
+                    f"arn:aws:glue:{self.region}:{self.account}:database/{athena_database}",
+                    f"arn:aws:glue:{self.region}:{self.account}:table/*",
+                ],
+            )
+        )
+
+        # --- IMPORTAR RAW BUCKET ---
+        raw_bucket_name = Fn.import_value("TelemetryRawBucketName")
+
+        telemetry_raw_bucket = s3.Bucket.from_bucket_name(
+            self,
+            "TelemetryRawBucket",
+            raw_bucket_name,
+        )
+        # Permitir leer RAW data (Athena necesita esto)
+        telemetry_raw_bucket.grant_read(query_lambda)
+
+        # Permitir escribir resultados en el bucket de Athena
         output_bucket.grant_read_write(query_lambda)
+
+        # Necesario para que Athena valide ubicación de resultados
+        query_lambda.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["s3:GetBucketLocation"],
+                resources=[output_bucket.bucket_arn],
+            )
+        )
 
         # Exponer lambda
         self.lambda_function = query_lambda

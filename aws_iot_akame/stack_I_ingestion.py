@@ -2,6 +2,7 @@ from aws_cdk import (
     Stack,
     Duration,
     RemovalPolicy,
+    CfnOutput,
     aws_s3 as s3,
     aws_iam as iam,
     aws_iot as iot,
@@ -103,6 +104,14 @@ class TelemetryIngestionStack(Stack):
                 ],
                 rule_disabled=False,
             ),
+        )
+
+
+        CfnOutput(
+            self,
+            "TelemetryRawBucketNameExport",
+            value=telemetry_bucket.bucket_name,
+            export_name="TelemetryRawBucketName",
         )
 
 

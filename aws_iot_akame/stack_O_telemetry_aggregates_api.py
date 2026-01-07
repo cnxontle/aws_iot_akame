@@ -68,11 +68,13 @@ class TelemetryAggregatesApiStack(Stack):
                 actions=[
                     "s3:PutObject",
                     "s3:GetObject",
+                    "s3:ListBucket",
                 ],
                 resources=[
                     f"arn:aws:s3:::{athena_output_bucket}/*",
                 ],
             )
         )
+        
 
         self.lambda_function = aggregates_lambda

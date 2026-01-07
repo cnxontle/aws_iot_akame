@@ -6,8 +6,6 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-
-
 class TelemetryAnalyticsStack(Stack):
     def __init__(
         self,
@@ -56,20 +54,21 @@ class TelemetryAnalyticsStack(Stack):
                     # PARTITION PROJECTION
                     "projection.enabled": "true",
 
-                    "projection.year.type": "string",
+                    "projection.year.type": "integer",
                     "projection.year.range": "2023,2100",
 
-                    "projection.month.type": "string",
-                    "projection.month.range": "01,12",
+                    "projection.month.type": "integer",
+                    "projection.month.range": "1,12",
                     "projection.month.digits": "2",
 
-                    "projection.day.type": "string",
-                    "projection.day.range": "01,31",
+                    "projection.day.type": "integer",
+                    "projection.day.range": "1,31",
                     "projection.day.digits": "2",
 
-                    "projection.hour.type": "string",
-                    "projection.hour.range": "00,23",
+                    "projection.hour.type": "integer",
+                    "projection.hour.range": "0,23",
                     "projection.hour.digits": "2",
+
 
                     # cómo construir el path
                     "storage.location.template": (
