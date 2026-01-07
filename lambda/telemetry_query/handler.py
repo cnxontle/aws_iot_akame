@@ -68,13 +68,23 @@ def main(event, context):
     metric = validation["metric"]
 
     # ------ DYNAMO LOOKUP ------
+    thing_names = []
     try:
         resp = TABLE.query(
             IndexName="ByUser",
             KeyConditionExpression=Key("userId").eq(user_id),
             ProjectionExpression="thingName",
         )
-        thing_names = [i["thingName"] for i in resp.get("Items", [])]
+        thing_names.extend([i["thingName"] for i in resp.get("Items", [])])
+
+        while "LastEvaluatedKey" in resp:
+            resp = TABLE.query(
+                IndexName="ByUser",
+                KeyConditionExpression=Key("userId").eq(user_id),
+                ProjectionExpression="thingName",
+                ExclusiveStartKey=resp["LastEvaluatedKey"],
+            )
+            thing_names.extend([i["thingName"] for i in resp.get("Items", [])]) 
     except Exception as e:
         return error(500, f"DynamoDB query failed: {str(e)}")
 
@@ -135,6 +145,12 @@ def main(event, context):
             QueryExecutionContext={"Database": DB},
             WorkGroup=WORKGROUP,
             ResultConfiguration={"OutputLocation": OUTPUT},
+            ResultReuseConfiguration={
+                "ResultReuseByAgeConfiguration": {
+                    "Enabled": True,
+                    "MaxAgeInMinutes": 10
+                }
+            }
         )["QueryExecutionId"]
 
         print("QueryExecutionId:", qid)
@@ -145,6 +161,8 @@ def main(event, context):
     # ------ WAIT FOR COMPLETION ------
     try:
         start = time.time()
+        sleep_time = 0.5
+
         while True:
             status = athena.get_query_execution(QueryExecutionId=qid)
             state = status["QueryExecution"]["Status"]["State"]
@@ -155,7 +173,9 @@ def main(event, context):
             if time.time() - start > 30:
                 return error(504, "Athena query timeout")
 
-            time.sleep(0.5)
+            time.sleep(sleep_time)
+            sleep_time = min(sleep_time * 1.5, 4)
+
 
         if state != "SUCCEEDED":
             print("Athena failure:", status)
