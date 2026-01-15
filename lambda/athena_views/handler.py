@@ -11,14 +11,13 @@ VIEW_SQL = """
 CREATE OR REPLACE VIEW telemetry.telemetry_flattened AS
 SELECT
     r.meshId,
-    r.thingName,
     r.event_ts AS timestamp,
     r.ingestedAt,
     rd.nodeId,
-    -- Métricas actuales
+
     rd.humidity,
     rd.raw,
-    -- Métricas de suelo
+
     rd.soil_moisture,
     rd.soil_temperature,
     rd.soil_ph,
@@ -27,7 +26,7 @@ SELECT
     rd.soil_phosphorus,
     rd.soil_potassium,
     rd.soil_salinity,
-    -- Métricas ambientales
+
     rd.air_temperature,
     rd.air_humidity,
     rd.air_pressure,
@@ -36,7 +35,7 @@ SELECT
     rd.solar_radiation,
     rd.co2_level,
     rd.leaf_wetness,
-    -- Calidad del aire
+
     rd.pm1,
     rd.pm2_5,
     rd.pm10,
@@ -44,24 +43,19 @@ SELECT
     rd.o3_level,
     rd.no2_level,
     rd.so2_level,
-    -- Métricas del dispositivo
+
     rd.battery_voltage,
     rd.battery_level,
     rd.battery_health,
     rd.signal_strength,
     rd.device_temperature,
     rd.uptime,
-    year,
-    month,
-    day,
-    hour
+
+    r.year
 FROM telemetry.telemetry_raw r
 CROSS JOIN UNNEST(r.readings) AS t(rd)
-WHERE
-    year IS NOT NULL
-    AND month IS NOT NULL
-    AND day IS NOT NULL
-    AND hour IS NOT NULL
+WHERE r.meshId IS NOT NULL;
+
 """
 
 

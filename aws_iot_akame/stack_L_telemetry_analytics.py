@@ -57,34 +57,20 @@ class TelemetryAnalyticsStack(Stack):
                     "projection.year.type": "integer",
                     "projection.year.range": "2023,2100",
 
-                    "projection.month.type": "integer",
-                    "projection.month.range": "1,12",
-                    "projection.month.digits": "2",
-
-                    "projection.day.type": "integer",
-                    "projection.day.range": "1,31",
-                    "projection.day.digits": "2",
-
-                    "projection.hour.type": "integer",
-                    "projection.hour.range": "0,23",
-                    "projection.hour.digits": "2",
-
+                    "projection.meshId.type": "injected",
 
                     # cómo construir el path
                     "storage.location.template": (
                         f"s3://{telemetry_bucket_name}/"
+                        "meshId=${meshId}/"
                         "year=${year}/"
-                        "month=${month}/"
-                        "day=${day}/"
-                        "hour=${hour}/"
+                      
                     ),
                 },
                 partition_keys=[
+                    glue.CfnTable.ColumnProperty(name="meshId", type="string"),
                     glue.CfnTable.ColumnProperty(name="year", type="string"),
-                    glue.CfnTable.ColumnProperty(name="month", type="string"),
-                    glue.CfnTable.ColumnProperty(name="day", type="string"),
-                    glue.CfnTable.ColumnProperty(name="hour", type="string"),
-                ],
+                 ],
                 storage_descriptor=glue.CfnTable.StorageDescriptorProperty(
                     location=f"s3://{telemetry_bucket_name}/",
                     input_format="org.apache.hadoop.mapred.TextInputFormat",
@@ -93,8 +79,6 @@ class TelemetryAnalyticsStack(Stack):
                         serialization_library="org.openx.data.jsonserde.JsonSerDe",
                     ),
                     columns=[
-                        glue.CfnTable.ColumnProperty(name="meshId", type="string"),
-                        glue.CfnTable.ColumnProperty(name="thingName", type="string"),
                         glue.CfnTable.ColumnProperty(name="event_ts", type="bigint"),
                         glue.CfnTable.ColumnProperty(name="ingestedAt", type="bigint"),
                         glue.CfnTable.ColumnProperty(

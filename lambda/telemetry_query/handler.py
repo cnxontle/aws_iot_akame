@@ -3,7 +3,7 @@ import json
 import time
 import re
 import boto3
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from boto3.dynamodb.conditions import Key
 
 
@@ -20,7 +20,7 @@ WORKGROUP = os.environ["ATHENA_WORKGROUP"]
 
 
 def error(status, message):
-    print("ERROR:", message)  # LOG
+    print("ERROR:", message)
     return {
         "statusCode": status,
         "headers": {"Content-Type": "application/json"},
@@ -52,12 +52,14 @@ def main(event, context):
     print("=== EVENT ===")
     print(json.dumps(event))
 
+    # ------ USER AUTH ------
     try:
         claims = event["requestContext"]["authorizer"]["jwt"]["claims"]
         user_id = claims["sub"]
     except Exception as e:
         return error(401, f"Invalid JWT claims: {str(e)}")
 
+    # ------ PARAM VALIDATION ------
     params = event.get("queryStringParameters") or {}
     validation = validate_query_params(params)
     if not isinstance(validation, dict):
@@ -67,7 +69,7 @@ def main(event, context):
     to_ts = validation["to_ts"]
     metric = validation["metric"]
 
-    # ------ DYNAMO LOOKUP ------
+    # ------ FETCH USER DEVICES ------
     thing_names = []
     try:
         resp = TABLE.query(
@@ -84,7 +86,7 @@ def main(event, context):
                 ProjectionExpression="thingName",
                 ExclusiveStartKey=resp["LastEvaluatedKey"],
             )
-            thing_names.extend([i["thingName"] for i in resp.get("Items", [])]) 
+            thing_names.extend([i["thingName"] for i in resp.get("Items", [])])
     except Exception as e:
         return error(500, f"DynamoDB query failed: {str(e)}")
 
@@ -95,50 +97,38 @@ def main(event, context):
             "body": json.dumps({"count": 0, "items": []}),
         }
 
-    # Construct WHERE clauses
-    quoted = ", ".join([f"'{t}'" for t in thing_names])
-    where = [f"thingName IN ({quoted})"]
+    # ------ SQL WHERE CONDITIONS ------
+    # meshId filter
+    quoted_mesh = ", ".join([f"'{t}'" for t in thing_names])
+    where_mesh = f"meshId IN ({quoted_mesh})"
 
+    # metric != null
+    where_metric = f"{metric} IS NOT NULL" if metric else "1=1"
 
-    if metric:
-        where.append(f"{metric} IS NOT NULL")
+    # timestamp range
+    where_time = f"timestamp >= {from_ts} AND timestamp <= {to_ts}"
 
-    where.append(
-        f"timestamp >= {from_ts} AND timestamp <= {to_ts}"
-    )
-
+    # Partition filter (ONLY year, because partition projection is enabled)
     f = datetime.fromtimestamp(from_ts, tz=timezone.utc)
-    t = datetime.fromtimestamp(to_ts, tz=timezone.utc)
+    year = f.year
+    partition_filter = f"year='{year}'"
 
-    partition_filters = []
-
-    current = f.replace(minute=0, second=0, microsecond=0)
-
-    while current <= t:
-        partition_filters.append(
-            f"(year='{current.year}' AND month='{current.month:02d}' AND day='{current.day:02d}' AND hour='{current.hour:02d}')"
-        )
-        current += timedelta(hours=1)
-
-    # Añadir particiones específicas
-    where.append("(" + " OR ".join(partition_filters) + ")")
-
-    # FULL SQL
+    # ------ FINAL SQL ------
     sql = f"""
         SELECT *
         FROM telemetry.telemetry_flattened
-        WHERE {" AND ".join(where)}
+        WHERE {where_mesh}
+        AND {partition_filter}
+        AND {where_metric}
+        AND {where_time}
         ORDER BY timestamp DESC
         LIMIT {MAX_ROWS}
     """
 
     print("=== ATHENA QUERY ===")
     print(sql)
-    print("DB:", DB)
-    print("WorkGroup:", WORKGROUP)
-    print("Output:", OUTPUT)
 
-    # ------ START ATHENA QUERY ------
+    # ------ EXECUTE ATHENA QUERY ------
     try:
         qid = athena.start_query_execution(
             QueryString=sql,
@@ -152,13 +142,12 @@ def main(event, context):
                 }
             }
         )["QueryExecutionId"]
-
-        print("QueryExecutionId:", qid)
-
     except Exception as e:
         return error(500, f"Athena start_query_execution failed: {str(e)}")
 
-    # ------ WAIT FOR COMPLETION ------
+    print("QueryExecutionId:", qid)
+
+    # ------ WAIT FOR ATHENA ------
     try:
         start = time.time()
         sleep_time = 0.5
@@ -176,12 +165,10 @@ def main(event, context):
             time.sleep(sleep_time)
             sleep_time = min(sleep_time * 1.5, 4)
 
-
         if state != "SUCCEEDED":
-            print("Athena failure:", status)
             reason = status["QueryExecution"]["Status"].get("StateChangeReason", "Unknown error")
             return error(500, f"Athena query failed: {reason}")
- 
+
     except Exception as e:
         return error(500, f"Athena get_query_execution failed: {str(e)}")
 
