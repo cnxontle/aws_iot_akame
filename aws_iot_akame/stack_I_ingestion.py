@@ -17,7 +17,6 @@ class TelemetryIngestionStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
 
-        # 1. S3 Bucket
         telemetry_bucket = s3.Bucket(
             self,
             "TelemetryRawBucket",
@@ -26,48 +25,55 @@ class TelemetryIngestionStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # 2. Lambda para validar meshId y crear prefix dinámico
-        transform_lambda = _lambda.Function(
+        ingestion_lambda = _lambda.Function(
             self,
-            "TelemetryTransformLambda",
+            "TelemetryIngestionLambda",
             runtime=_lambda.Runtime.PYTHON_3_12,
-            handler="transform.handler",
+            handler="handler.handler",
             timeout=Duration.seconds(30),
-            code=_lambda.Code.from_asset("lambda/transform"),
-            environment={
-                "DYNAMO_TABLE": "DeviceFactoryStack-DeviceMetadataA",
-            },
+            memory_size=256,
+            code=_lambda.Code.from_asset("lambda/ingestion"),
         )
 
-        # Permisos DynamoDB
-        transform_lambda.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=["dynamodb:GetItem", "dynamodb:Query"],
-                resources=["*"],  # Puedes restringir si quieres
-            )
-        )
-
-        # 3. Firehose role
         firehose_role = iam.Role(
             self,
             "FirehoseRole",
             assumed_by=iam.ServicePrincipal("firehose.amazonaws.com"),
         )
+
         firehose_role.add_to_policy(
             iam.PolicyStatement(
-                actions=[
-                    "lambda:InvokeFunction",
-                    "lambda:GetFunctionConfiguration",
-                ],
-                resources=[transform_lambda.function_arn],
+                actions=["lambda:InvokeFunction", "lambda:GetFunctionConfiguration"],
+                resources=[ingestion_lambda.function_arn],
             )
         )
 
+        firehose_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "s3:AbortMultipartUpload",
+                    "s3:GetBucketLocation",
+                    "s3:GetObject",
+                    "s3:ListBucket",
+                    "s3:ListBucketMultipartUploads",
+                    "s3:PutObject",
+                ],
+                resources=[telemetry_bucket.bucket_arn, f"{telemetry_bucket.bucket_arn}/*"],
+            )
+        )
 
-        telemetry_bucket.grant_write(firehose_role)
-        transform_lambda.grant_invoke(firehose_role)
+        # CloudWatch Logs permissions
+        firehose_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:PutLogEvents",
+                    "logs:CreateLogStream",
+                    "logs:CreateLogGroup",
+                ],
+                resources=["*"],
+            )
+        )
 
-        # KMS Key for Firehose S3 encryption
         my_kms_key = kms.Key(
             self,
             "TelemetryFirehoseKMSKey",
@@ -75,7 +81,10 @@ class TelemetryIngestionStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # 4. Firehose Delivery Stream con Lambda Transform
+        telemetry_bucket.grant_write(firehose_role)
+        ingestion_lambda.grant_invoke(firehose_role)
+        my_kms_key.grant_encrypt_decrypt(firehose_role)
+
         delivery_stream = firehose.CfnDeliveryStream(
             self,
             "TelemetryFirehose",
@@ -84,7 +93,7 @@ class TelemetryIngestionStack(Stack):
                 bucket_arn=telemetry_bucket.bucket_arn,
                 role_arn=firehose_role.role_arn,
                 compression_format="GZIP",
-                prefix="meshId=!{partitionKeyFromLambda:meshId}/year=!{timestamp:yyyy}/",
+                prefix="meshId=!{partitionKeyFromLambda:meshId}/year=!{timestamp:YYYY}/",
                 error_output_prefix="errors/!{firehose:error-output-type}/",
                 buffering_hints=firehose.CfnDeliveryStream.BufferingHintsProperty(
                     interval_in_seconds=300,
@@ -103,8 +112,16 @@ class TelemetryIngestionStack(Stack):
                             parameters=[
                                 firehose.CfnDeliveryStream.ProcessorParameterProperty(
                                     parameter_name="LambdaArn",
-                                    parameter_value=transform_lambda.function_arn,
-                                )
+                                    parameter_value=ingestion_lambda.function_arn,
+                                ),
+                                firehose.CfnDeliveryStream.ProcessorParameterProperty(
+                                    parameter_name="NumberOfRetries",
+                                    parameter_value="3",
+                                ),
+                                firehose.CfnDeliveryStream.ProcessorParameterProperty(
+                                    parameter_name="RoleArn",
+                                    parameter_value=firehose_role.role_arn,
+                                ),
                             ],
                         )
                     ],
@@ -112,11 +129,10 @@ class TelemetryIngestionStack(Stack):
                 dynamic_partitioning_configuration=firehose.CfnDeliveryStream.DynamicPartitioningConfigurationProperty(
                     enabled=True
                 ),
+
             ),
         )
 
-
-        # 5. IoT Rule IAM Role
         iot_rule_role = iam.Role(
             self,
             "IoTRuleRole",
@@ -130,7 +146,6 @@ class TelemetryIngestionStack(Stack):
             )
         )
 
-        # 6. IoT Rule → Firehose
         iot.CfnTopicRule(
             self,
             "GatewayTelemetryRule",
@@ -163,7 +178,12 @@ class TelemetryIngestionStack(Stack):
             export_name="TelemetryRawBucketName"
         )
 
-        CfnOutput(self, "FirehoseName", value=delivery_stream.ref)
+        CfnOutput(
+            self,
+            "FirehoseName",
+            value=delivery_stream.ref,
+            export_name="FirehoseName"
+        )
+
         self.telemetry_bucket = telemetry_bucket
         self.firehose_stream = delivery_stream
-
