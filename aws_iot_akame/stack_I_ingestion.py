@@ -93,7 +93,7 @@ class TelemetryIngestionStack(Stack):
                 bucket_arn=telemetry_bucket.bucket_arn,
                 role_arn=firehose_role.role_arn,
                 compression_format="GZIP",
-                prefix="meshId=!{partitionKeyFromLambda:meshId}/year=!{timestamp:YYYY}/",
+                prefix="meshid=!{partitionKeyFromLambda:meshId}/year=!{timestamp:YYYY}/",
                 error_output_prefix="errors/!{firehose:error-output-type}/",
                 buffering_hints=firehose.CfnDeliveryStream.BufferingHintsProperty(
                     interval_in_seconds=300,

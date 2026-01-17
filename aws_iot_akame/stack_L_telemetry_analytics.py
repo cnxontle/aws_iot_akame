@@ -57,18 +57,18 @@ class TelemetryAnalyticsStack(Stack):
                     "projection.year.type": "integer",
                     "projection.year.range": "2023,2100",
 
-                    "projection.meshId.type": "injected",
+                    "projection.meshid.type": "injected",
 
                     # cómo construir el path
                     "storage.location.template": (
                         f"s3://{telemetry_bucket_name}/"
-                        "meshId=${meshId}/"
+                        "meshid=${meshid}/"
                         "year=${year}/"
                       
                     ),
                 },
                 partition_keys=[
-                    glue.CfnTable.ColumnProperty(name="meshId", type="string"),
+                    glue.CfnTable.ColumnProperty(name="meshid", type="string"),
                     glue.CfnTable.ColumnProperty(name="year", type="string"),
                  ],
                 storage_descriptor=glue.CfnTable.StorageDescriptorProperty(

@@ -10,7 +10,7 @@ OUTPUT = os.environ["ATHENA_OUTPUT"]
 VIEW_SQL = """
 CREATE OR REPLACE VIEW telemetry.telemetry_flattened AS
 SELECT
-    r.meshId,
+    r.meshid,
     r.event_ts AS timestamp,
     r.ingestedAt,
     rd.nodeId,
@@ -54,7 +54,7 @@ SELECT
     r.year
 FROM telemetry.telemetry_raw r
 CROSS JOIN UNNEST(r.readings) AS t(rd)
-WHERE r.meshId IS NOT NULL;
+WHERE r.meshid IS NOT NULL;
 
 """
 
