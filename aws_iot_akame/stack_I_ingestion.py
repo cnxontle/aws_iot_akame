@@ -154,7 +154,7 @@ class TelemetryIngestionStack(Stack):
                 sql="""
                 SELECT
                     *,
-                    topic(3) AS meshId,
+                    topic(4) AS meshId,
                     timestamp() AS ingestedAt
                 FROM 'gateway/data/telemetry/+'
                 """,
