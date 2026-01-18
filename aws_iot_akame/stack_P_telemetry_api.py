@@ -46,18 +46,7 @@ class TelemetryApiStack(Stack):
             handler=query_lambda,
         )
 
-        # aggregar permisos
-        query_lambda.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents",
-                ],
-                resources=["*"],
-            )
-        )
-      
+    
         # Route: GET /telemetry/query
         api.add_routes(
             path="/telemetry/query",
