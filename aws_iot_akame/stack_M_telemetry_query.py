@@ -26,11 +26,11 @@ class TelemetryQueryStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        #importar KMS Key
+        # Importar KMS Key
         my_kms_key_arn = Fn.import_value("TelemetryKMSKeyArn")
         telemetry_key = kms.Key.from_key_arn(self, "TelemetryKMSKey", my_kms_key_arn)
 
-        # Normalizar bucket (string o IBucket)
+        # Normalizar bucket 
         if isinstance(athena_output_bucket, str):
             output_bucket = s3.Bucket.from_bucket_name(
                 self,
@@ -73,6 +73,7 @@ class TelemetryQueryStack(Stack):
                     "athena:StartQueryExecution",
                     "athena:GetQueryExecution",
                     "athena:GetQueryResults",
+                    "athena:GetQueryResultsLocation"
                 ],
                 resources=[
                     f"arn:aws:athena:{self.region}:{self.account}:workgroup/telemetry-prod"
@@ -91,12 +92,12 @@ class TelemetryQueryStack(Stack):
                 resources=[
                     f"arn:aws:glue:{self.region}:{self.account}:catalog",
                     f"arn:aws:glue:{self.region}:{self.account}:database/{athena_database}",
-                    f"arn:aws:glue:{self.region}:{self.account}:table/*",
+                    f"arn:aws:glue:{self.region}:{self.account}:table/{athena_database}/*"
                 ],
             )
         )
 
-        # --- IMPORTAR RAW BUCKET ---
+        # Importar bucket RAW
         raw_bucket_name = Fn.import_value("TelemetryRawBucketName")
 
         telemetry_raw_bucket = s3.Bucket.from_bucket_name(
@@ -104,7 +105,7 @@ class TelemetryQueryStack(Stack):
             "TelemetryRawBucket",
             raw_bucket_name,
         )
-        # Permitir leer RAW data (Athena necesita esto)
+        # Permitir leer RAW data 
         telemetry_raw_bucket.grant_read(query_lambda)
 
         # Permitir escribir resultados en el bucket de Athena
