@@ -6,6 +6,7 @@ from aws_cdk import (
     aws_iam as iam,
     aws_dynamodb as dynamodb,
     aws_logs as logs,
+    aws_kms as kms,
     aws_s3 as s3,
 )
 from constructs import Construct
@@ -24,6 +25,10 @@ class TelemetryQueryStack(Stack):
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        #importar KMS Key
+        my_kms_key_arn = Fn.import_value("TelemetryKMSKeyArn")
+        telemetry_key = kms.Key.from_key_arn(self, "TelemetryKMSKey", my_kms_key_arn)
 
         # Normalizar bucket (string o IBucket)
         if isinstance(athena_output_bucket, str):
@@ -57,6 +62,9 @@ class TelemetryQueryStack(Stack):
 
         # DynamoDB (GSI ByUser)
         metadata_table.grant_read_data(query_lambda)
+
+        # KMS Key
+        telemetry_key.grant_decrypt(query_lambda)
 
         # Athena permissions
         query_lambda.add_to_role_policy(

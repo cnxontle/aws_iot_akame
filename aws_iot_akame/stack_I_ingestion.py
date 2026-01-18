@@ -154,6 +154,7 @@ class TelemetryIngestionStack(Stack):
                 sql="""
                 SELECT
                     *,
+                    timestamp AS event_ts,
                     topic(4) AS meshId,
                     timestamp() AS ingestedAt
                 FROM 'gateway/data/telemetry/+'
@@ -183,6 +184,13 @@ class TelemetryIngestionStack(Stack):
             "FirehoseName",
             value=delivery_stream.ref,
             export_name="FirehoseName"
+        )
+
+        CfnOutput(
+            self,
+            "TelemetryKMSKeyArn",
+            value=my_kms_key.key_arn,
+            export_name="TelemetryKMSKeyArn"
         )
 
         self.telemetry_bucket = telemetry_bucket

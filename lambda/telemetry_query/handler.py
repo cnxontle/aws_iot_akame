@@ -69,6 +69,10 @@ def main(event, context):
     to_ts = validation["to_ts"]
     metric = validation["metric"]
 
+    print("from_ts:", from_ts)
+    print("to_ts:", to_ts)
+    print("metric:", metric)
+
     # ------ FETCH USER DEVICES ------
     thing_names = []
     try:
@@ -78,6 +82,7 @@ def main(event, context):
             ProjectionExpression="thingName",
         )
         thing_names.extend([i["thingName"] for i in resp.get("Items", [])])
+        print ("DynamoDB query returned", len(thing_names), "items")
 
         while "LastEvaluatedKey" in resp:
             resp = TABLE.query(
@@ -100,7 +105,7 @@ def main(event, context):
     # ------ SQL WHERE CONDITIONS ------
     # meshId filter
     quoted_mesh = ", ".join([f"'{t}'" for t in thing_names])
-    where_mesh = f"meshId IN ({quoted_mesh})"
+    where_mesh = f"meshid IN ({quoted_mesh})"
 
     # metric != null
     where_metric = f"{metric} IS NOT NULL" if metric else "1=1"
@@ -111,6 +116,7 @@ def main(event, context):
     # Partition filter (ONLY year, because partition projection is enabled)
     f = datetime.fromtimestamp(from_ts, tz=timezone.utc)
     year = f.year
+    print("Query partition year:", year)
     partition_filter = f"year='{year}'"
 
     # ------ FINAL SQL ------
@@ -187,6 +193,7 @@ def main(event, context):
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"count": len(items), "items": items}),
+            
         }
 
     except Exception as e:
